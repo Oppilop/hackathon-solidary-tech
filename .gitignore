@@ -1,0 +1,44 @@
+# --- Terraform ---
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+tfplan
+plan.txt
+
+# --- Credenciais / segredos ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig
+alertmanager-pagerduty-config.yaml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# --- Go ---
+*.exe
+*.test
+coverage.out
+donation-service/donation-service
+
+# --- Editores / SO ---
+.DS_Store
+.idea/
+.vscode/
