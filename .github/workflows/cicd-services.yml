@@ -1,0 +1,203 @@
+name: CI/CD Microservices
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "gitops/base/**"
+      - ".github/workflows/cicd-services.yml"
+      - ".github/workflows/_reusable-cicd.yml"
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - ".github/workflows/cicd-services.yml"
+      - ".github/workflows/_reusable-cicd.yml"
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Forçar rodar TODOS os serviços, ignorando o paths-filter"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: cicd-services-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
+  security-events: write
+  pull-requests: read
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 1) DETECTAR MUDANÇAS — só reconstrói o que mudou (economia de minutos de CI)
+  # ═══════════════════════════════════════════════════════════════════════════
+  detect-changes:
+    name: Detectar mudanças
+    runs-on: ubuntu-latest
+    outputs:
+      ngo: ${{ steps.filter.outputs.ngo }}
+      donation: ${{ steps.filter.outputs.donation }}
+      volunteer: ${{ steps.filter.outputs.volunteer }}
+      self_healing: ${{ steps.filter.outputs.self_healing }}
+      force_all: ${{ steps.compute.outputs.force_all }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Paths filter
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ngo:
+              - 'services/ngo-service/**'
+              - 'gitops/base/ngo/**'
+            donation:
+              - 'services/donation-service/**'
+              - 'gitops/base/donation/**'
+            volunteer:
+              - 'services/volunteer-service/**'
+              - 'gitops/base/volunteer/**'
+            self_healing:
+              - 'services/self-healing-webhook/**'
+              - 'gitops/base/self-healing/**'
+
+      - name: Computar "rodar todos"
+        id: compute
+        run: |
+          FORCE=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ inputs.force_all }}" = "true" ]; then
+            FORCE=true
+          fi
+          # Mudou o workflow reutilizável? Roda tudo para validar a esteira.
+          if git log -1 --name-only --pretty=format: 2>/dev/null | \
+             grep -q '.github/workflows/_reusable-cicd.yml'; then
+            FORCE=true
+          fi
+          echo "force_all=$FORCE" >> "$GITHUB_OUTPUT"
+          echo "Rodar todos? $FORCE"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 2) NGO-SERVICE (Python / Flask / PostgreSQL)
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-ngo:
+    name: ngo-service
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.force_all == 'true' ||
+      needs.detect-changes.outputs.ngo == 'true'
+    uses: ./.github/workflows/_reusable-cicd.yml
+    with:
+      service: ngo
+      language: python
+      ecr_repository: togglemaster-ngo
+      gitops_path: gitops/base/ngo/deployment.yaml
+    secrets:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN:     ${{ secrets.AWS_SESSION_TOKEN }}
+      GITOPS_TOKEN:          ${{ secrets.GITOPS_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 3) DONATION-SERVICE (Go / PostgreSQL / SQS) — Hot Path
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-donation:
+    name: donation-service
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.force_all == 'true' ||
+      needs.detect-changes.outputs.donation == 'true'
+    uses: ./.github/workflows/_reusable-cicd.yml
+    with:
+      service: donation
+      language: go
+      ecr_repository: togglemaster-donation
+      gitops_path: gitops/base/donation/deployment.yaml
+    secrets:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN:     ${{ secrets.AWS_SESSION_TOKEN }}
+      GITOPS_TOKEN:          ${{ secrets.GITOPS_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 4) VOLUNTEER-SERVICE (Python / Flask / DynamoDB)
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-volunteer:
+    name: volunteer-service
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.force_all == 'true' ||
+      needs.detect-changes.outputs.volunteer == 'true'
+    uses: ./.github/workflows/_reusable-cicd.yml
+    with:
+      service: volunteer
+      language: python
+      ecr_repository: togglemaster-volunteer
+      gitops_path: gitops/base/volunteer/deployment.yaml
+    secrets:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN:     ${{ secrets.AWS_SESSION_TOKEN }}
+      GITOPS_TOKEN:          ${{ secrets.GITOPS_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 5) SELF-HEALING WEBHOOK (automação de resposta a incidentes)
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-self-healing:
+    name: self-healing-webhook
+    needs: detect-changes
+    if: >-
+      needs.detect-changes.outputs.force_all == 'true' ||
+      needs.detect-changes.outputs.self_healing == 'true'
+    uses: ./.github/workflows/_reusable-cicd.yml
+    with:
+      service: self-healing-webhook
+      language: python
+      ecr_repository: togglemaster-self-healing-webhook
+      gitops_path: gitops/base/self-healing/deployment.yaml
+      service_dir: services/self-healing-webhook
+    secrets:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN:     ${{ secrets.AWS_SESSION_TOKEN }}
+      GITOPS_TOKEN:          ${{ secrets.GITOPS_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 6) RESUMO
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [ci-ngo, ci-donation, ci-volunteer, ci-self-healing]
+    if: always()
+    steps:
+      - name: Avaliar resultado dos jobs
+        run: |
+          echo "ngo:           ${{ needs.ci-ngo.result }}"
+          echo "donation:      ${{ needs.ci-donation.result }}"
+          echo "volunteer:     ${{ needs.ci-volunteer.result }}"
+          echo "self-healing:  ${{ needs.ci-self-healing.result }}"
+          echo ""
+          FAILED=false
+          for result in \
+            "${{ needs.ci-ngo.result }}" \
+            "${{ needs.ci-donation.result }}" \
+            "${{ needs.ci-volunteer.result }}" \
+            "${{ needs.ci-self-healing.result }}"; do
+            case "$result" in
+              success|skipped) ;;
+              *) FAILED=true; echo "::error::Job com resultado: $result" ;;
+            esac
+          done
+          if [ "$FAILED" = "true" ]; then
+            echo "::error::Um ou mais serviços falharam."
+            exit 1
+          fi
+          echo "Todos os serviços passaram (ou foram pulados)."

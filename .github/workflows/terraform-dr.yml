@@ -1,0 +1,127 @@
+# =============================================================================
+# Disaster Recovery — ambiente ESPELHO (Warm Standby) em us-west-2.
+#
+# É a evidência prática da Opção B do requisito 4: um único acionamento
+# levanta a infraestrutura completa na região secundária, reutilizando os
+# MESMOS módulos Terraform do primário (terraform/modules/).
+#
+# Enquanto não há desastre, o ambiente fica destruído (custo zero). O que
+# mantém o RPO é o backup contínuo (Velero -> S3 cross-region, snapshots do
+# RDS e PITR do DynamoDB).
+#
+# Estado do Terraform em key SEPARADA — um apply de DR nunca toca produção.
+# =============================================================================
+
+name: Terraform DR (Warm Standby)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Ação no ambiente de DR"
+        required: true
+        type: choice
+        default: plan
+        options: [plan, apply, destroy]
+      node_desired_size:
+        description: "Nodes no espelho (1 = warm standby, 3 = assumir produção)"
+        required: false
+        type: string
+        default: "1"
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/dr/**"
+
+concurrency:
+  group: terraform-dr
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  DR_REGION: us-west-2
+  TF_VERSION: "1.10.5"
+  WORKING_DIR: ./terraform/dr
+  TF_STATE_KEY: solidarytech/fase5/dr/terraform.tfstate
+
+jobs:
+  dr:
+    name: DR — ${{ inputs.action || 'plan' }}
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      TF_VAR_aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_VAR_aws_session_token: ${{ secrets.AWS_SESSION_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.DR_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt -check
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ env.TF_STATE_KEY }}" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      - name: Gerar terraform.tfvars
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          cat > terraform.tfvars <<EOF
+          aws_region            = "${{ env.DR_REGION }}"
+          gitops_repo_url       = "${{ github.server_url }}/${{ github.repository }}.git"
+          node_desired_size     = ${{ inputs.node_desired_size || 1 }}
+          aws_access_key_id     = "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          aws_secret_access_key = "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          aws_session_token     = "${{ secrets.AWS_SESSION_TOKEN }}"
+          EOF
+
+      - name: Terraform plan
+        if: inputs.action == 'plan' || github.event_name == 'pull_request'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform plan -no-color
+
+      # O apply do espelho é o "1 comando" do requisito de DR.
+      - name: Terraform apply (levantar o espelho)
+        if: inputs.action == 'apply'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve
+
+      - name: Exibir checklist de failover
+        if: inputs.action == 'apply'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "─── Ambiente espelho no ar. Passos do failover: ───"
+          terraform output -json failover_checklist | tr ',' '\n'
+
+      - name: Terraform destroy (desligar o espelho)
+        if: inputs.action == 'destroy'
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform destroy -auto-approve
