@@ -1,0 +1,14 @@
+aws_region   = "us-west-2"
+project      = "togglemaster"
+cluster_name = "togglemaster-eks-dr"
+
+# MESMO repositório GitOps do primário — é o que garante paridade de estado.
+gitops_repo_url = "https://github.com/SEU-USUARIO/togglemaster-tc5.git"
+gitops_revision = "HEAD"
+
+# Warm standby: 1 node. No failover, suba para 3.
+node_desired_size = 1
+
+aws_access_key_id     = "..."
+aws_secret_access_key = "..."
+aws_session_token     = "..."

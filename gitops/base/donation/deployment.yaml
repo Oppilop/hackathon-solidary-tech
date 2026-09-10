@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: donation-service
+  namespace: donation-namespace
+  labels:
+    app: donation-service
+    app.kubernetes.io/part-of: solidarytech
+    # Marca o Hot Path: é este serviço que tem SLO formal e error budget.
+    solidarytech.org/tier: critical
+    tags.datadoghq.com/service: donation-service
+    tags.datadoghq.com/env: production
+    tags.datadoghq.com/version: "1.0.0"
+spec:
+  # 2 réplicas: o caminho crítico não pode ter ponto único de falha.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # zero downtime durante deploy — protege o error budget
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: donation-service
+  template:
+    metadata:
+      labels:
+        app: donation-service
+        app.kubernetes.io/part-of: solidarytech
+        solidarytech.org/tier: critical
+        tags.datadoghq.com/service: donation-service
+        tags.datadoghq.com/env: production
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9464"
+        prometheus.io/path: "/metrics"
+        ad.datadoghq.com/donation-service.logs: '[{"source":"go","service":"donation-service"}]'
+    spec:
+      # Espalha as réplicas entre nodes: perder um node não derruba o Hot Path.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: donation-service
+      # Tempo para drenar conexões em voo no SIGTERM (o serviço faz shutdown
+      # gracioso em até 15s).
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: donation-service
+          # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
+          image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/togglemaster-donation:latest
+          imagePullPolicy: Always
+          ports:
+            - { containerPort: 8082, name: http }
+            - { containerPort: 9464, name: metrics }
+          envFrom:
+            - secretRef:
+                name: aws-credentials
+                optional: true
+          env:
+            - name: PORT
+              value: "8082"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-db-secret
+                  key: DATABASE_URL
+            - name: AWS_REGION
+              valueFrom: { configMapKeyRef: { name: solidarytech-config, key: AWS_REGION } }
+            - name: AWS_SQS_URL
+              valueFrom: { configMapKeyRef: { name: solidarytech-config, key: AWS_SQS_URL } }
+            # ===== OpenTelemetry =====
+            - name: OTEL_SERVICE_NAME
+              value: "donation-service"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-opentelemetry-collector.observability.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=solidarytech,deployment.environment=production"
+            # ===== Tags do Datadog (unified service tagging) =====
+            - name: DD_SERVICE
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/service']" } }
+            - name: DD_ENV
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/env']" } }
+            - name: DD_VERSION
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/version']" } }
+          # RIGHTSIZING (FinOps): Hot Path recebe mais folga que os demais.
+          # Baseline medido: ~60m CPU / ~110Mi em regime; picos de mídia
+          # chegaram a 280m. Limit = ~2x o pico observado; o HPA cuida do resto.
+          resources:
+            requests: { cpu: "150m", memory: "192Mi" }
+            limits: { cpu: "500m", memory: "384Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8082 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8082 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]

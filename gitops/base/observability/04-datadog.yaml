@@ -1,0 +1,117 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: datadog
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.datadoghq.com
+    chart: datadog
+    targetRevision: 3.81.0
+    helm:
+      releaseName: datadog
+      values: |
+        # ---------- Identificação ----------
+        datadog:
+          apiKeyExistingSecret: datadog-secret
+          site: us5.datadoghq.com
+          clusterName: solidarytech-eks-prod
+          # Tags herdadas por TODA telemetria enviada ao Datadog — é o que
+          # permite cruzar custo (FinOps) e confiabilidade (SRE) por CostCenter.
+          tags:
+            - "env:production"
+            - "project:SolidaryTech"
+            - "costcenter:NGO-Core"
+            - "phase:5"
+
+          # ---------- Cluster Checks ----------
+          # Desativa a verificação de cluster_checks já que não há configs a despachar
+          clusterChecks:
+            enabled: false
+
+          # ---------- APM ----------
+          apm:
+            portEnabled: true
+            socketEnabled: true
+            instrumentation:
+              enabled: false   # auto-injection desligada
+
+          # ---------- Logs ----------
+          logs:
+            enabled: false
+
+          # ---------- Process Agent ----------
+          processAgent:
+            enabled: false
+            processCollection: false
+
+          # ---------- System Probe (Garante que eBPF/NPM fiquem desligados) ----------
+          systemProbe:
+            enabled: false
+
+          # ---------- Métricas extras ----------
+          dogstatsd:
+            originDetection: true
+            useHostPort: true
+          orchestratorExplorer:
+            enabled: true        # mostra deployments/HPAs no Datadog
+          kubeStateMetricsEnabled: false   # já vem do kube-prometheus-stack
+
+        # ---------- Cluster Check Runner ----------
+        clusterChecksRunner:
+          enabled: false
+
+        # ---------- Cluster Agent ----------
+        clusterAgent:
+          enabled: true
+          replicas: 1
+          metricsProvider:
+            enabled: false     # HPA continua usando o metrics-server padrão
+          # Probes ajustadas para evitar falhas durante o startup em nós pequenos
+          livenessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+
+        # ---------- Node Agent (DaemonSet) ----------
+        agents:
+          containers:
+            agent:
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits:   { cpu: 300m, memory: 256Mi }
+            traceAgent:
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+                limits:   { cpu: 150m, memory: 128Mi }
+            processAgent:
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+                limits:   { cpu: 150m, memory: 128Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

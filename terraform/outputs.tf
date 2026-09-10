@@ -1,0 +1,56 @@
+output "cluster_name" {
+  description = "Use em: aws eks update-kubeconfig --name <output> --region us-east-1"
+  value       = module.eks.cluster_name
+}
+
+output "cluster_endpoint" {
+  value = module.eks.cluster_endpoint
+}
+
+output "ecr_repository_urls" {
+  description = "URLs dos repositórios ECR (mapa serviço -> URL)."
+  value       = module.ecr.repository_urls
+}
+
+output "rds_endpoints" {
+  description = "Endpoints dos bancos RDS."
+  value       = module.rds.endpoints
+}
+
+output "sqs_queue_url" {
+  value = module.sqs.queue_url
+}
+
+output "dynamodb_table" {
+  value = module.dynamodb.table_name
+}
+
+output "velero_backup_bucket" {
+  description = "Bucket S3 (região de DR) usado pelo Velero."
+  value       = module.dr_backup.bucket_name
+}
+
+output "velero_backup_region" {
+  description = "Região do bucket de backup — deve casar com o manifesto do Velero."
+  value       = var.dr_region
+}
+
+output "nlb_dns_command" {
+  description = "Comando para obter o DNS do NLB criado pelo ingress-nginx."
+  value       = "kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+}
+
+output "argocd_initial_admin_password_command" {
+  description = "Comando para obter a senha inicial do admin do ArgoCD."
+  value       = "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+}
+
+output "argocd_port_forward_command" {
+  description = "Comando para acessar a UI do ArgoCD localmente."
+  value       = "kubectl -n argocd port-forward svc/argocd-server 8080:80"
+}
+
+output "finops_tags_applied" {
+  description = "Tags obrigatórias aplicadas a todos os recursos (evidência de FinOps)."
+  value       = local.common_tags
+}

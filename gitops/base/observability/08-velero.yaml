@@ -1,0 +1,124 @@
+# =============================================================================
+# Velero — Disaster Recovery, Opção A (backup cross-region do estado do cluster)
+#
+# O bucket de destino fica na REGIÃO SECUNDÁRIA (us-west-2) e é criado pelo
+# Terraform (terraform/modules/dr-backup). Se a região primária cair, os
+# backups continuam acessíveis para restaurar no cluster espelho.
+#
+# ATENÇÃO: `bucket` abaixo precisa ser IGUAL a var.velero_bucket_name do
+# Terraform (terraform/terraform.tfvars). Nomes de bucket S3 são globais.
+#
+# O Secret `velero-credentials` (chave `cloud`) é criado pelo Terraform no
+# módulo k8s-bootstrap — credenciais nunca entram no Git.
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    targetRevision: 7.2.1
+    helm:
+      releaseName: velero
+      values: |
+        # ---------- Credenciais ----------
+        credentials:
+          useSecret: true
+          existingSecret: velero-credentials
+
+        # ---------- Plugin da AWS ----------
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.10.1
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
+
+        # ---------- Onde os backups são gravados ----------
+        configuration:
+          backupStorageLocation:
+            - name: default
+              provider: aws
+              bucket: togglemaster-solidarytech-velero-backups
+              default: true
+              config:
+                region: us-west-2
+
+          # Snapshots de volume EBS exigem o EBS CSI driver e permissões de IAM
+          # que o AWS Academy não concede. Como a plataforma não usa PVC hoje
+          # (bancos são gerenciados: RDS e DynamoDB), o backup do Velero cobre
+          # manifestos e objetos do cluster; os DADOS são protegidos pelos
+          # backups automáticos do RDS e pelo PITR do DynamoDB.
+          # Ver docs/fase5/PCN-DR.md.
+          volumeSnapshotLocation: []
+
+        snapshotsEnabled: false
+        deployNodeAgent: false
+
+        # ---------- Rightsizing (FinOps) ----------
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits:   { cpu: 300m, memory: 384Mi }
+
+        # ---------- Agendamentos ----------
+        schedules:
+          # Backup completo diário do cluster — retenção de 30 dias.
+          diario-completo:
+            disabled: false
+            schedule: "0 3 * * *"
+            useOwnerReferencesInBackup: false
+            template:
+              ttl: "720h"
+              includedNamespaces:
+                - ngo-namespace
+                - donation-namespace
+                - volunteer-namespace
+                - observability
+                - solidarytech-edge
+                - argocd
+
+          # O Hot Path tem backup de HORA EM HORA: é o que sustenta o RPO
+          # declarado no PCN para a configuração do serviço de doações.
+          horario-donation:
+            disabled: false
+            schedule: "0 * * * *"
+            template:
+              ttl: "168h"
+              includedNamespaces:
+                - donation-namespace
+
+        # Métricas do Velero raspadas pelo Prometheus (o backup também é
+        # monitorado: um backup que falha em silêncio não é backup).
+        metrics:
+          enabled: true
+          scrapeInterval: 60s
+          serviceMonitor:
+            enabled: true
+            additionalLabels:
+              release: kps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

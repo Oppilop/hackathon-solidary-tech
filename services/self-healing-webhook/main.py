@@ -1,0 +1,243 @@
+
+import json
+import logging
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Lock
+
+from kubernetes import client, config
+from kubernetes.client.rest import ApiException
+
+# -----------------------------------------------------------------------------
+# Logging em JSON (1 evento = 1 linha) — formato escolhido para o Loki indexar
+# -----------------------------------------------------------------------------
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+            "service": "self-healing-webhook",
+        }
+        # Anexa qualquer "extra" passado em log.info(..., extra={...})
+        if hasattr(record, "extra_data"):
+            payload.update(record.extra_data)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(JsonFormatter())
+log = logging.getLogger("self-heal")
+log.setLevel(logging.INFO)
+log.addHandler(handler)
+
+# -----------------------------------------------------------------------------
+# Config
+# -----------------------------------------------------------------------------
+ALLOWED_NS_REGEX = re.compile(
+    os.getenv(
+        "ALLOWED_NAMESPACE_REGEX",
+        r"^(ngo|donation|volunteer)-namespace$",
+    )
+)
+# Default: 1 restart por deployment a cada 5 min
+RATE_LIMIT_SECONDS = int(os.getenv("RATE_LIMIT_SECONDS", "300"))
+LISTEN_PORT = int(os.getenv("LISTEN_PORT", "8080"))
+
+
+_recent_actions: dict[str, float] = {}
+_lock = Lock()
+
+def _within_rate_limit(deployment_key: str) -> bool:
+    """True se este deployment foi restartado RECENTEMENTE (não pode de novo)."""
+    with _lock:
+        last = _recent_actions.get(deployment_key, 0)
+        if time.time() - last < RATE_LIMIT_SECONDS:
+            return True
+        _recent_actions[deployment_key] = time.time()
+        return False
+
+
+_apps_v1 = None
+_k8s_init_error: str | None = None
+
+def _get_apps_api():
+    """Retorna o AppsV1Api, inicializando o cliente K8s na primeira chamada.
+
+    Retorna (api, None) em sucesso ou (None, mensagem_de_erro) em falha.
+    Nunca lança — a falha vira uma resposta de erro, não um crash.
+    """
+    global _apps_v1, _k8s_init_error
+    if _apps_v1 is not None:
+        return _apps_v1, None
+
+    try:
+        config.load_incluster_config()
+        log.info("k8s_config_loaded", extra={"extra_data": {"mode": "in-cluster"}})
+    except Exception as in_cluster_err:  # noqa: BLE001 — precisamos capturar tudo
+        # Fallback para kubeconfig (útil só em execução local, fora do cluster)
+        try:
+            config.load_kube_config()
+            log.info("k8s_config_loaded", extra={"extra_data": {"mode": "kubeconfig"}})
+        except Exception as kubeconfig_err:  # noqa: BLE001
+            _k8s_init_error = (
+                f"não foi possível carregar config do K8s: "
+                f"in-cluster={in_cluster_err}; kubeconfig={kubeconfig_err}"
+            )
+            log.error("k8s_config_failed", extra={"extra_data": {"error": _k8s_init_error}})
+            return None, _k8s_init_error
+
+    _apps_v1 = client.AppsV1Api()
+    return _apps_v1, None
+
+def restart_deployment(namespace: str, deployment: str) -> tuple[bool, str]:
+    """
+    Faz o equivalente de `kubectl rollout restart deployment/<name>`:
+    altera a anotação `kubectl.kubernetes.io/restartedAt` no PodTemplate.
+    Isso força o K8s a criar uma nova ReplicaSet (rolling restart).
+    """
+    if not ALLOWED_NS_REGEX.match(namespace):
+        return False, f"namespace {namespace!r} fora da whitelist"
+
+    deployment_key = f"{namespace}/{deployment}"
+    if _within_rate_limit(deployment_key):
+        return False, f"rate-limited ({RATE_LIMIT_SECONDS}s) para {deployment_key}"
+
+    apps_v1, init_err = _get_apps_api()
+    if apps_v1 is None:
+        return False, f"cliente K8s indisponível: {init_err}"
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    patch = {
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "kubectl.kubernetes.io/restartedAt": timestamp,
+                        "togglemaster.io/restarted-by": "self-healing-webhook",
+                    }
+                }
+            }
+        }
+    }
+    try:
+        apps_v1.patch_namespaced_deployment(
+            name=deployment, namespace=namespace, body=patch
+        )
+        return True, f"deployment {deployment_key} restart triggered at {timestamp}"
+    except ApiException as e:
+        return False, f"k8s API erro {e.status}: {e.reason}"
+
+
+# -----------------------------------------------------------------------------
+# HTTP handler
+# -----------------------------------------------------------------------------
+class WebhookHandler(BaseHTTPRequestHandler):
+    """
+    Aceita 2 formatos:
+      a) Alertmanager v4 (POST /heal) -> JSON com .alerts[]
+      b) Health check (GET /health)
+    """
+
+    # Silencia o log padrão (já temos o nosso JSON)
+    def log_message(self, *args, **kwargs):
+        pass
+
+    def _respond(self, status: int, body: dict):
+        payload = json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self):
+        if self.path == "/health":
+            self._respond(200, {"status": "ok"})
+        else:
+            self._respond(404, {"error": "not found"})
+
+    def do_POST(self):
+        if self.path != "/heal":
+            self._respond(404, {"error": "not found"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8")
+            payload = json.loads(body) if body else {}
+        except (ValueError, json.JSONDecodeError) as e:
+            log.warning(
+                "invalid_payload",
+                extra={"extra_data": {"error": str(e)}},
+            )
+            self._respond(400, {"error": f"invalid JSON: {e}"})
+            return
+
+        # Formato Alertmanager: { "alerts": [{ "labels": {...}, "status": "..." }, ...] }
+        alerts = payload.get("alerts", [])
+        if not alerts:
+            log.info("no_alerts_in_payload", extra={"extra_data": {"payload": payload}})
+            self._respond(200, {"status": "ok", "actions": []})
+            return
+
+        actions = []
+        for alert in alerts:
+            labels = alert.get("labels", {})
+            status = alert.get("status", "")
+
+            # Só agimos em alertas FIRING (não em "resolved")
+            if status != "firing":
+                continue
+
+            # Só restartamos quando o autor do alerta pediu (auto_heal: true)
+            if labels.get("auto_heal") != "true":
+                continue
+
+            service = labels.get("service") or labels.get("job")
+            namespace = labels.get("namespace")
+            alertname = labels.get("alertname", "?")
+
+            if not service or not namespace:
+                log.warning(
+                    "alert_missing_labels",
+                    extra={"extra_data": {"labels": labels}},
+                )
+                continue
+
+            ok, detail = restart_deployment(namespace, service)
+            entry = {
+                "alertname": alertname,
+                "service": service,
+                "namespace": namespace,
+                "action": "rollout-restart",
+                "ok": ok,
+                "detail": detail,
+            }
+            actions.append(entry)
+            # Este log é a PROVA da automação para o vídeo da Fase 4
+            log.info("auto_heal_executed", extra={"extra_data": entry})
+
+        self._respond(200, {"status": "ok", "actions": actions})
+
+def main():
+    server = HTTPServer(("0.0.0.0", LISTEN_PORT), WebhookHandler)
+    log.info(
+        "webhook_listening",
+        extra={
+            "extra_data": {
+                "port": LISTEN_PORT,
+                "allowed_ns_regex": ALLOWED_NS_REGEX.pattern,
+                "rate_limit_seconds": RATE_LIMIT_SECONDS,
+            }
+        },
+    )
+    server.serve_forever()
+
+if __name__ == "__main__":
+    main()

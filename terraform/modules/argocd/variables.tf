@@ -1,0 +1,33 @@
+variable "namespace" {
+  type    = string
+  default = "argocd"
+}
+
+variable "chart_version" {
+  description = "Versão do chart Helm argo-cd."
+  type        = string
+  default     = "7.6.12"
+}
+
+variable "expose_lb" {
+  description = "Se true, expõe o argocd-server via LoadBalancer. Em Academy, deixe false e use port-forward."
+  type        = bool
+  default     = false
+}
+
+variable "services" {
+  description = "Microsserviços que viram Application CRDs no ArgoCD."
+  type        = list(string)
+  default     = ["ngo", "donation", "volunteer"]
+}
+
+variable "gitops_repo_url" {
+  description = "URL do repositório Git monitorado pelo ArgoCD."
+  type        = string
+}
+
+variable "gitops_revision" {
+  description = "Branch/tag/commit alvo dentro do repo."
+  type        = string
+  default     = "HEAD"
+}

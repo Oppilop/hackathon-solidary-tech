@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ngo-service
+  namespace: ngo-namespace
+  labels:
+    app: ngo-service
+    app.kubernetes.io/part-of: solidarytech
+    tags.datadoghq.com/service: ngo-service
+    tags.datadoghq.com/env: production
+    tags.datadoghq.com/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ngo-service
+  template:
+    metadata:
+      labels:
+        app: ngo-service
+        app.kubernetes.io/part-of: solidarytech
+        tags.datadoghq.com/service: ngo-service
+        tags.datadoghq.com/env: production
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9464"
+        prometheus.io/path: "/metrics"
+        ad.datadoghq.com/ngo-service.logs: '[{"source":"python","service":"ngo-service"}]'
+    spec:
+      containers:
+        - name: ngo-service
+          # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
+          image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/togglemaster-ngo:latest
+          imagePullPolicy: Always
+          ports:
+            - { containerPort: 8081, name: http }
+            - { containerPort: 9464, name: metrics }
+          env:
+            - name: PORT
+              value: "8081"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: solidarytech-db-secret
+                  key: DATABASE_URL
+            # ===== OpenTelemetry =====
+            - name: OTEL_SERVICE_NAME
+              value: "ngo-service"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-opentelemetry-collector.observability.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=solidarytech,deployment.environment=production"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # ===== Tags do Datadog (unified service tagging) =====
+            - name: DD_SERVICE
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/service']" } }
+            - name: DD_ENV
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/env']" } }
+            - name: DD_VERSION
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/version']" } }
+          # RIGHTSIZING (FinOps): serviço de cadastro, tráfego baixo e estável.
+          # Baseline medido: ~40m CPU / ~90Mi. Request = baseline + folga.
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "300m", memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8081 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8081 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]

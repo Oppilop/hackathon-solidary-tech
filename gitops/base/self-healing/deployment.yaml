@@ -1,0 +1,137 @@
+
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: self-healing-webhook
+  namespace: observability
+  labels:
+    app: self-healing-webhook
+    app.kubernetes.io/part-of: solidarytech
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: self-healing-webhook
+  labels:
+    app: self-healing-webhook
+    app.kubernetes.io/part-of: solidarytech
+rules:
+  # Restartar deployment = patch em apps/v1/deployments
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch"]
+  # Útil para diagnóstico (não estritamente necessário)
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: self-healing-webhook
+  labels:
+    app: self-healing-webhook
+    app.kubernetes.io/part-of: solidarytech
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: self-healing-webhook
+subjects:
+  - kind: ServiceAccount
+    name: self-healing-webhook
+    namespace: observability
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-healing-webhook
+  namespace: observability
+  labels:
+    app: self-healing-webhook
+    app.kubernetes.io/part-of: solidarytech
+spec:
+  replicas: 1   # Um único pod já basta — restart é raro
+  selector:
+    matchLabels:
+      app: self-healing-webhook
+  template:
+    metadata:
+      labels:
+        app: self-healing-webhook
+      annotations:
+        # Para o Prometheus raspar métricas DESTE pod no futuro
+        prometheus.io/scrape: "false"
+    spec:
+      serviceAccountName: self-healing-webhook
+      # Garante que o token do SA seja montado (é o que o load_incluster_config
+      # usa para autenticar na API do K8s). É o default, mas explicitamos.
+      automountServiceAccountToken: true
+      # Com readOnlyRootFilesystem=true, o processo não pode escrever no "/".
+      # Alguns componentes (cliente K8s, libs) podem querer escrever em /tmp.
+      # Um emptyDir dá um /tmp gravável sem abrir mão do rootfs read-only.
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: webhook
+          # ESTA LINHA É ATUALIZADA AUTOMATICAMENTE PELO CI (sed) igual aos
+          # demais microsserviços.
+          image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/togglemaster-self-healing-webhook:latest
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: LISTEN_PORT
+              value: "8080"
+            - name: ALLOWED_NAMESPACE_REGEX
+              value: '^(ngo|donation|volunteer)-namespace$'
+            - name: RATE_LIMIT_SECONDS
+              value: "300"
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: self-healing-webhook
+  namespace: observability
+  labels:
+    app: self-healing-webhook
+    app.kubernetes.io/part-of: solidarytech
+spec:
+  selector:
+    app: self-healing-webhook
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

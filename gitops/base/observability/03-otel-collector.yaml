@@ -1,0 +1,318 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opentelemetry-collector
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.108.0
+    helm:
+      releaseName: otel
+      values: |
+        # ---------- Modo de deploy ----------
+        mode: daemonset
+        image:
+          repository: otel/opentelemetry-collector-contrib
+          tag: 0.110.0
+
+        # ---------- Recursos (Ajustados para t3.medium) ----------
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits:   { cpu: 400m, memory: 384Mi }
+
+        # ---------- Injeção de variáveis de ambiente do Pod ----------
+        extraEnvs:
+          - name: K8S_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+
+        # ---------- ServiceAccount + RBAC ----------
+        serviceAccount:
+          create: true
+        clusterRole:
+          create: true
+          # ATENÇÃO: são necessários DOIS conjuntos de permissões:
+          #
+          # 1) processor k8sattributes -> enriquece telemetria com metadados
+          #    (precisa de pods, namespaces, replicasets, nodes)
+          #
+          # 2) receiver k8s_cluster -> coleta métricas de nível de CLUSTER
+          #    (precisa listar praticamente todos os workloads). Sem estas
+          #    regras o collector entra em LOOP de erros
+          #    "... is forbidden: User system:serviceaccount:observability:
+          #     otel-opentelemetry-collector cannot list resource ..."
+          #    e nenhuma métrica de cluster é coletada.
+          rules:
+            - apiGroups: [""]
+              resources:
+                - "pods"
+                - "pods/status"
+                - "namespaces"
+                - "namespaces/status"
+                - "nodes"
+                - "nodes/spec"
+                - "nodes/stats"
+                - "nodes/proxy"
+                - "services"
+                - "endpoints"
+                - "events"
+                - "replicationcontrollers"
+                - "replicationcontrollers/status"
+                - "resourcequotas"
+                - "persistentvolumes"
+                - "persistentvolumeclaims"
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["apps"]
+              resources:
+                - "replicasets"
+                - "deployments"
+                - "daemonsets"
+                - "statefulsets"
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["batch"]
+              resources:
+                - "jobs"
+                - "cronjobs"
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["autoscaling"]
+              resources:
+                - "horizontalpodautoscalers"
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["extensions"]
+              resources:
+                - "daemonsets"
+                - "deployments"
+                - "replicasets"
+              verbs: ["get", "list", "watch"]
+
+        # ---------- Volumes: leitura de logs do host ----------
+        extraVolumes:
+          - name: varlogpods
+            hostPath: { path: /var/log/pods }
+          - name: varlibdockercontainers
+            hostPath: { path: /var/lib/docker/containers }
+        extraVolumeMounts:
+          - name: varlogpods
+            mountPath: /var/log/pods
+            readOnly: true
+          - name: varlibdockercontainers
+            mountPath: /var/lib/docker/containers
+            readOnly: true
+
+        # ---------- Secrets para o Datadog ----------
+        extraEnvsFrom:
+          - secretRef:
+              name: datadog-secret
+              optional: true
+
+        # ---------- Configuração do pipeline ----------
+        config:
+          # ===== RECEIVERS =====
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+                  cors:
+                    allowed_origins: ["http://*", "https://*"]
+            filelog:
+              include:
+                - /var/log/pods/*/*/*.log
+              exclude:
+                - /var/log/pods/observability_*/*/*.log
+              start_at: end
+              include_file_path: true
+              include_file_name: false
+              operators:
+                - type: regex_parser
+                  id: extract_metadata_from_filepath
+                  regex: '^.*\/(?P<namespace>[^_]+)_(?P<pod_name>[^_]+)_(?P<uid>[^\/]+)\/(?P<container_name>[^\/]+)\/.*$'
+                  parse_from: attributes["log.file.path"]
+                  cache: { size: 128 }
+                - type: move
+                  from: attributes.namespace
+                  to: resource["k8s.namespace.name"]
+                - type: move
+                  from: attributes.pod_name
+                  to: resource["k8s.pod.name"]
+                - type: move
+                  from: attributes.container_name
+                  to: resource["k8s.container.name"]
+            hostmetrics:
+              collection_interval: 30s
+              scrapers:
+                cpu:    { metrics: { system.cpu.utilization: { enabled: true } } }
+                memory: { metrics: { system.memory.utilization: { enabled: true } } }
+                disk: {}
+                filesystem: {}
+                load: {}
+                network: {}
+            k8s_cluster:
+              auth_type: serviceAccount
+              collection_interval: 30s
+
+          # ===== PROCESSORS =====
+          processors:
+            # Limites absolutos alinhados com a limit de 384MiB
+            memory_limiter:
+              check_interval: 2s
+              limit_mib: 300
+              spike_limit_mib: 75
+            batch:
+              send_batch_size: 1024
+              timeout: 10s
+              send_batch_max_size: 2048
+            k8sattributes:
+              auth_type: serviceAccount
+              passthrough: false
+              extract:
+                metadata:
+                  - k8s.namespace.name
+                  - k8s.pod.name
+                  - k8s.pod.uid
+                  - k8s.deployment.name
+                  - k8s.node.name
+                  - k8s.container.name
+                labels:
+                  - tag_name: app
+                    key: app
+                    from: pod
+              pod_association:
+                - sources:
+                    - from: resource_attribute
+                      name: k8s.pod.uid
+                - sources:
+                    - from: resource_attribute
+                      name: k8s.pod.name
+                - sources:
+                    - from: connection
+            resource:
+              attributes:
+                - key: cluster.name
+                  value: solidarytech-eks-prod
+                  action: upsert
+                - key: deployment.environment
+                  value: production
+                  action: upsert
+
+          # ===== EXPORTERS =====
+          exporters:
+            otlphttp/loki:
+              endpoint: http://loki.observability.svc.cluster.local:3100/otlp
+              tls:
+                insecure: true
+
+            prometheusremotewrite:
+              endpoint: http://kps-kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090/api/v1/write
+              tls:
+                insecure: true
+              resource_to_telemetry_conversion:
+                enabled: true
+
+            datadog:
+              api:
+                key: ${env:DD_API_KEY}
+                site: ${env:DD_SITE}
+              hostname: ${env:K8S_NODE_NAME}
+              host_metadata:
+                enabled: true
+              traces:
+                ignore_resources: ["GET /health", "GET /metrics"]
+
+            debug:
+              verbosity: basic
+
+          # ===== EXTENSIONS =====
+          extensions:
+            health_check:
+              endpoint: 0.0.0.0:13133
+            zpages:
+              endpoint: 0.0.0.0:55679
+
+          # ===== SERVICE =====
+          service:
+            extensions: [health_check, zpages]
+            telemetry:
+              logs:
+                level: info
+              metrics:
+                address: 0.0.0.0:8888
+            pipelines:
+              traces:
+                receivers:  [otlp]
+                processors: [memory_limiter, k8sattributes, resource, batch]
+                exporters:  [datadog, debug]
+              metrics:
+                receivers:  [hostmetrics, k8s_cluster]
+                processors: [memory_limiter, k8sattributes, resource, batch]
+                exporters:  [prometheusremotewrite, datadog]
+              metrics/app:
+                receivers:  [otlp]
+                processors: [memory_limiter, k8sattributes, resource, batch]
+                exporters:  [datadog]
+              logs:
+                receivers:  [otlp, filelog]
+                processors: [memory_limiter, k8sattributes, resource, batch]
+                exporters:  [otlphttp/loki, datadog]
+
+        # ---------- Ports/Service ----------
+        # CORREÇÃO CRÍTICA: no modo `daemonset` o chart do OpenTelemetry
+        # Collector NÃO cria um Service por padrão (ver open-telemetry/
+        # opentelemetry-helm-charts#524). Sem ele, o nome DNS
+        # "otel-opentelemetry-collector.observability.svc.cluster.local"
+        # não existe, e TODAS as aplicações falham ao enviar telemetria com
+        # "[Errno 111] Connection refused" — nenhum trace/métrica chega ao
+        # Collector (e, por consequência, nada chega ao Datadog/Loki/Prometheus).
+        # Habilitar aqui cria o Service com o nome <release>-opentelemetry-collector
+        # = "otel-opentelemetry-collector", exatamente o endpoint que os 5
+        # microsserviços já usam na env OTEL_EXPORTER_OTLP_ENDPOINT.
+        service:
+          enabled: true
+          type: ClusterIP
+
+        ports:
+          otlp:
+            enabled: true
+            containerPort: 4317
+            servicePort: 4317
+            hostPort: 4317
+            protocol: TCP
+            appProtocol: grpc
+          otlp-http:
+            enabled: true
+            containerPort: 4318
+            servicePort: 4318
+            hostPort: 4318
+            protocol: TCP
+          metrics:
+            enabled: true
+            containerPort: 8888
+            servicePort: 8888
+            protocol: TCP
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

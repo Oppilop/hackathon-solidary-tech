@@ -1,0 +1,128 @@
+# =============================================================================
+# Configuração do Alertmanager — TEMPLATE.
+#
+# Este arquivo é versionado com PLACEHOLDERS. As chaves reais entram apenas em
+# tempo de deploy, vindas dos GitHub Secrets:
+#
+#   sed -e "s/PAGERDUTY_INTEGRATION_KEY/$PD_KEY/g" \
+#       -e "s|DISCORD_WEBHOOK_URL|$DISCORD_URL|g" \
+#       gitops/templates/alertmanager-pagerduty-config.template.yaml \
+#     | kubectl apply -f -
+#
+# O pipeline .github/workflows/terraform-infra.yml faz isso automaticamente.
+# NENHUMA credencial de PagerDuty ou Discord é commitada.
+# =============================================================================
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-pagerduty-config
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: solidarytech
+    app.kubernetes.io/managed-by: argocd
+type: Opaque
+stringData:
+  alertmanager.yaml: |
+    global:
+      resolve_timeout: 5m
+      pagerduty_url: https://events.pagerduty.com/v2/enqueue
+
+    # ---------- Árvore de roteamento ----------
+    # Anti-fadiga de alerta: agrupamos por alertname para que 8 réplicas do
+    # mesmo deployment falhando NÃO virem 8 incidentes.
+    route:
+      receiver: 'pagerduty-default'
+      group_by: ['alertname', 'namespace', 'service']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+
+      routes:
+        # --- CRÍTICO: abre incidente no PagerDuty (que notifica o Discord) ---
+        - matchers:
+            - severity = "critical"
+          receiver: 'pagerduty-critical'
+          group_wait: 10s
+          repeat_interval: 1h
+          continue: true          # segue avaliando as rotas seguintes
+
+        # --- AUTO-HEAL: alertas marcados com auto_heal="true" acionam o
+        #     webhook que faz rollout restart do deployment afetado ---
+        - matchers:
+            - severity = "critical"
+            - auto_heal = "true"
+          receiver: 'self-healing-webhook'
+          group_wait: 0s          # sem espera: reduzir MTTR é o objetivo
+          repeat_interval: 30m
+
+        # --- WARNING: ticket, sem acordar ninguém ---
+        - matchers:
+            - severity = "warning"
+          receiver: 'pagerduty-warning'
+
+    # ---------- Inibição ----------
+    # Se um crítico já está aberto para um namespace, não inunde com warnings
+    # do mesmo namespace (o crítico já leva a equipe ao mesmo lugar).
+    inhibit_rules:
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal: ['alertname', 'namespace']
+
+    # ---------- Receivers ----------
+    receivers:
+      - name: 'pagerduty-default'
+        pagerduty_configs:
+          - service_key: 'PAGERDUTY_INTEGRATION_KEY'
+            severity: 'info'
+            description: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} ({{ .GroupLabels.namespace }})'
+            details:
+              alertname: '{{ .GroupLabels.alertname }}'
+              namespace: '{{ .GroupLabels.namespace }}'
+              service:   '{{ .GroupLabels.service }}'
+              summary:   '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+
+      - name: 'pagerduty-critical'
+        pagerduty_configs:
+          - service_key: 'PAGERDUTY_INTEGRATION_KEY'
+            severity: 'critical'
+            client: 'Alertmanager (SolidaryTech)'
+            client_url: 'https://grafana.solidarytech.local'
+            description: '🔥 [CRITICAL] {{ .GroupLabels.alertname }} — {{ .GroupLabels.service }}'
+            details:
+              alertname:   '{{ .GroupLabels.alertname }}'
+              namespace:   '{{ .GroupLabels.namespace }}'
+              service:     '{{ .GroupLabels.service }}'
+              num_firing:  '{{ .Alerts.Firing | len }}'
+              summary:     '{{ range .Alerts }}{{ .Annotations.summary }}{{ "\n" }}{{ end }}'
+              description: '{{ range .Alerts }}{{ .Annotations.description }}{{ "\n" }}{{ end }}'
+              runbook:     '{{ range .Alerts }}{{ .Annotations.runbook_url }}{{ end }}'
+        # O Discord aceita payload do Slack no endpoint .../slack
+        slack_configs:
+          - api_url: 'DISCORD_WEBHOOK_URL'
+            channel: '#incidentes'
+            send_resolved: true
+            title: '🔥 [CRITICAL] {{ .GroupLabels.alertname }}'
+            text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+
+      - name: 'pagerduty-warning'
+        pagerduty_configs:
+          - service_key: 'PAGERDUTY_INTEGRATION_KEY'
+            severity: 'warning'
+            description: '⚠️ [WARNING] {{ .GroupLabels.alertname }} — {{ .GroupLabels.service }}'
+        slack_configs:
+          - api_url: 'DISCORD_WEBHOOK_URL'
+            channel: '#incidentes'
+            send_resolved: true
+            title: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+            text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+
+      # ---------- Self-Healing Webhook ----------
+      - name: 'self-healing-webhook'
+        webhook_configs:
+          - url: 'http://self-healing-webhook.observability.svc.cluster.local:8080/heal'
+            send_resolved: true
+            http_config:
+              follow_redirects: true

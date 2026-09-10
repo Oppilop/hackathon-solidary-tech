@@ -1,0 +1,277 @@
+# =============================================================================
+# Regras de SLO e alertas da SolidaryTech.
+#
+# Estrutura:
+#   1. Recording rules  -> materializam os SLIs do donation-service em várias
+#                          janelas. Consultas do painel de SRE leem daqui
+#                          (barato) em vez de recalcular rate() toda vez.
+#   2. Burn-rate alerts -> alertam pelo consumo do ERROR BUDGET, não pelo
+#                          valor instantâneo do erro. É a prática do SRE
+#                          Workbook: alerta rápido para queima aguda e alerta
+#                          lento para degradação crônica.
+#   3. Alertas de infra  -> disponibilidade, latência, recursos.
+#
+# SLO do donation-service (Hot Path):
+#   - Disponibilidade: 99,9% das requisições sem 5xx  -> error budget = 0,1%
+#   - Latência:        95% das requisições < 500 ms
+# Detalhes e justificativa: docs/fase5/SRE-SLO-SLI-SLA.md
+# =============================================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: solidarytech-slo-rules
+  namespace: observability
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    # Necessário para o Prometheus do kube-prometheus-stack pegar a regra
+    release: kps
+    app.kubernetes.io/part-of: solidarytech
+spec:
+  groups:
+    # =========================================================================
+    # 1) RECORDING RULES — SLIs do donation-service
+    # =========================================================================
+    - name: solidarytech.slo.donation.recording
+      interval: 30s
+      rules:
+        # --- SLI de disponibilidade: proporção de requisições COM ERRO ---
+        - record: solidarytech:donation:error_ratio_rate5m
+          expr: |
+            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="donation-service"}[5m]))
+
+        - record: solidarytech:donation:error_ratio_rate30m
+          expr: |
+            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[30m]))
+            /
+            sum(rate(http_requests_total{service="donation-service"}[30m]))
+
+        - record: solidarytech:donation:error_ratio_rate1h
+          expr: |
+            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total{service="donation-service"}[1h]))
+
+        - record: solidarytech:donation:error_ratio_rate6h
+          expr: |
+            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total{service="donation-service"}[6h]))
+
+        # --- SLI de disponibilidade na janela do SLO (7 dias) ---
+        - record: solidarytech:donation:availability_ratio_7d
+          expr: |
+            1 - (
+              sum(increase(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[7d]))
+              /
+              sum(increase(http_requests_total{service="donation-service"}[7d]))
+            )
+
+        # --- Error budget restante (1 = intacto, 0 = esgotado) ---
+        # budget_restante = 1 - (erros_observados / erros_permitidos)
+        # erros_permitidos = total * (1 - SLO) = total * 0.001
+        - record: solidarytech:donation:error_budget_remaining_7d
+          expr: |
+            1 - (
+              sum(increase(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[7d]))
+              /
+              (sum(increase(http_requests_total{service="donation-service"}[7d])) * 0.001)
+            )
+
+        # --- SLI de latência: p95 ---
+        - record: solidarytech:donation:latency_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_request_duration_seconds_bucket{service="donation-service"}[5m]))
+            )
+
+        # --- Proporção de requisições dentro do alvo de latência (500ms) ---
+        - record: solidarytech:donation:latency_good_ratio_5m
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{service="donation-service",le="0.5"}[5m]))
+            /
+            sum(rate(http_request_duration_seconds_count{service="donation-service"}[5m]))
+
+    # =========================================================================
+    # 2) ALERTAS DE ERROR BUDGET (multi-window, multi-burn-rate)
+    #
+    # Fator de queima = (taxa de erro observada) / (0,1% permitido).
+    #   14,4x -> consome 2% do budget mensal em 1 hora  => página AGORA
+    #    6,0x -> consome 10% do budget em 6 horas       => ticket, sem acordar
+    #
+    # As duas janelas (curta + longa) precisam disparar juntas: a longa evita
+    # falso positivo de um pico isolado; a curta garante recuperação rápida do
+    # alerta quando o problema é resolvido.
+    # =========================================================================
+    - name: solidarytech.slo.donation.burnrate
+      interval: 30s
+      rules:
+        - alert: DonationErrorBudgetFastBurn
+          expr: |
+            solidarytech:donation:error_ratio_rate5m > (14.4 * 0.001)
+            and
+            solidarytech:donation:error_ratio_rate1h > (14.4 * 0.001)
+          for: 2m
+          labels:
+            severity: critical
+            auto_heal: "true" # aciona o self-healing-webhook
+            service: donation-service
+            slo: availability
+            category: slo
+          annotations:
+            summary: '🔥 Error budget do donation-service queimando 14x mais rápido que o permitido'
+            description: |
+              O Hot Path de doações está consumindo o error budget a uma taxa que
+              esgota 2% do orçamento mensal em 1 hora.
+              Taxa de erro (5m): {{ $value | humanizePercentage }} — limite do SLO: 0,1%.
+              Ação imediata: verificar RDS, fila SQS e últimos deploys.
+            runbook_url: 'https://github.com/SEU-USUARIO/togglemaster-tc5/blob/main/docs/fase5/ITSM-AIOPS.md#runbook-donation-error-budget'
+
+        - alert: DonationErrorBudgetSlowBurn
+          expr: |
+            solidarytech:donation:error_ratio_rate30m > (6 * 0.001)
+            and
+            solidarytech:donation:error_ratio_rate6h > (6 * 0.001)
+          for: 15m
+          labels:
+            severity: warning
+            service: donation-service
+            slo: availability
+            category: slo
+          annotations:
+            summary: '⚠️ Degradação crônica no donation-service (queima 6x do error budget)'
+            description: |
+              Sem urgência de plantão, mas o orçamento de erro do mês será
+              esgotado se o padrão continuar. Abrir ticket de investigação.
+              Taxa de erro (6h): {{ $value | humanizePercentage }}.
+
+        - alert: DonationErrorBudgetExhausted
+          expr: solidarytech:donation:error_budget_remaining_7d <= 0
+          for: 5m
+          labels:
+            severity: critical
+            service: donation-service
+            slo: availability
+            category: slo
+          annotations:
+            summary: '⛔ Error budget do donation-service ESGOTADO na janela de 7 dias'
+            description: |
+              Política de congelamento: novos deploys de feature no
+              donation-service ficam bloqueados até o budget se recuperar.
+              Só entram correções de confiabilidade.
+
+        - alert: DonationLatencySLOBreach
+          expr: solidarytech:donation:latency_p95_5m > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            service: donation-service
+            slo: latency
+            category: performance
+          annotations:
+            summary: '🐢 p95 do donation-service acima do alvo de 500 ms'
+            description: 'p95 atual: {{ $value }}s. Alvo do SLO: 0,5s.'
+
+    # =========================================================================
+    # 3) ALERTAS GERAIS DE APLICAÇÃO E INFRAESTRUTURA
+    # =========================================================================
+    - name: solidarytech.app.errors
+      interval: 30s
+      rules:
+        - alert: HighHttpErrorRate
+          expr: |
+            (
+              sum by (service) (
+                rate(http_requests_total{
+                  http_response_status_code=~"5..",
+                  service=~"ngo-service|donation-service|volunteer-service"
+                }[5m])
+              )
+              /
+              sum by (service) (
+                rate(http_requests_total{
+                  service=~"ngo-service|donation-service|volunteer-service"
+                }[5m])
+              )
+            ) > 0.05
+          for: 2m
+          labels:
+            severity: critical
+            auto_heal: "true"
+            category: errors
+          annotations:
+            summary: '🔥 Taxa de erros HTTP 5xx > 5% em {{ $labels.service }}'
+            description: |
+              O serviço {{ $labels.service }} está respondendo 5xx em mais de 5%
+              das requisições nos últimos 5 minutos.
+              Valor atual: {{ $value | humanizePercentage }}
+            runbook_url: 'https://github.com/SEU-USUARIO/togglemaster-tc5/blob/main/docs/fase5/ITSM-AIOPS.md#runbook-high-error-rate'
+
+    - name: solidarytech.availability
+      interval: 30s
+      rules:
+        - alert: ServiceDown
+          expr: |
+            up{namespace=~"ngo-namespace|donation-namespace|volunteer-namespace"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            category: availability
+          annotations:
+            summary: '⛔ Alvo indisponível no namespace {{ $labels.namespace }}'
+            description: 'O endpoint de métricas/health não responde há mais de 2 minutos. Verifique pod, RDS e credenciais AWS.'
+
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~".*-namespace"}[10m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            category: stability
+          annotations:
+            summary: '🔄 Pod {{ $labels.pod }} reiniciando em loop'
+            description: 'O pod {{ $labels.pod }} no namespace {{ $labels.namespace }} reiniciou mais de 3 vezes em 10 minutos.'
+
+    - name: solidarytech.resources
+      interval: 1m
+      rules:
+        # Estes dois alertas são também a ENTRADA do ciclo de rightsizing:
+        # se um serviço vive perto do limit, o request está subdimensionado;
+        # se vive muito abaixo, há desperdício. Ver docs/fase5/FINOPS.md.
+        - alert: HighMemoryUsage
+          expr: |
+            (
+              container_memory_working_set_bytes{namespace=~".*-namespace", container!="", container!="POD"}
+              /
+              container_spec_memory_limit_bytes{namespace=~".*-namespace", container!="", container!="POD"}
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            category: resources
+          annotations:
+            summary: '💾 Memória do container {{ $labels.container }} > 90% do limit'
+            description: 'O container {{ $labels.container }} no pod {{ $labels.pod }} está em {{ $value | humanizePercentage }} do memory.limits.'
+
+        - alert: HighCpuUsage
+          expr: |
+            (
+              sum by (namespace, pod, container) (
+                rate(container_cpu_usage_seconds_total{namespace=~".*-namespace", container!="", container!="POD"}[5m])
+              )
+              /
+              sum by (namespace, pod, container) (
+                kube_pod_container_resource_limits{namespace=~".*-namespace", resource="cpu"}
+              )
+            ) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            category: resources
+          annotations:
+            summary: '⚡ CPU do container {{ $labels.container }} > 85% do limit'
+            description: 'CPU sustentada alta em {{ $labels.container }} ({{ $value | humanizePercentage }}). O HPA deveria ter escalado — verifique o metrics-server.'

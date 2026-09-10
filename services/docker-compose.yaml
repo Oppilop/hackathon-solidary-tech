@@ -1,0 +1,122 @@
+# =============================================================================
+# Ambiente local de desenvolvimento (paridade com o cluster, sem custo AWS).
+#   - PostgreSQL para ngo-service e donation-service
+#   - LocalStack para SQS (donation) e DynamoDB (volunteer)
+#   - Os 3 microsserviços com DISABLE_OTEL=true (sem coletor local)
+#
+# Uso:  docker compose up --build
+# =============================================================================
+
+services:
+  postgres-ngo:
+    image: postgres:15-alpine
+    container_name: postgres-ngo
+    environment:
+      POSTGRES_USER: solidary
+      POSTGRES_PASSWORD: solidary
+      POSTGRES_DB: ngodb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solidary -d ngodb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_ngo_data:/var/lib/postgresql/data
+      - ./ngo-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [solidarytech]
+
+  postgres-donation:
+    image: postgres:15-alpine
+    container_name: postgres-donation
+    environment:
+      POSTGRES_USER: solidary
+      POSTGRES_PASSWORD: solidary
+      POSTGRES_DB: donationdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solidary -d donationdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_donation_data:/var/lib/postgresql/data
+      - ./donation-service/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [solidarytech]
+
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: localstack
+    environment:
+      SERVICES: sqs,dynamodb
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    networks: [solidarytech]
+
+  ngo-service:
+    build: ./ngo-service
+    container_name: ngo-service
+    depends_on:
+      postgres-ngo: { condition: service_healthy }
+    environment:
+      PORT: "8081"
+      DATABASE_URL: "postgres://solidary:solidary@postgres-ngo:5432/ngodb"
+      DISABLE_OTEL: "true"
+    ports:
+      - "8081:8081"
+    networks: [solidarytech]
+
+  donation-service:
+    build: ./donation-service
+    container_name: donation-service
+    depends_on:
+      postgres-donation: { condition: service_healthy }
+      localstack: { condition: service_healthy }
+    environment:
+      PORT: "8082"
+      DATABASE_URL: "postgres://solidary:solidary@postgres-donation:5432/donationdb"
+      AWS_REGION: "us-east-1"
+      AWS_SQS_URL: "http://localstack:4566/000000000000/solidary-donations"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      DISABLE_OTEL: "true"
+    ports:
+      - "8082:8082"
+    networks: [solidarytech]
+
+  volunteer-service:
+    build: ./volunteer-service
+    container_name: volunteer-service
+    depends_on:
+      localstack: { condition: service_healthy }
+    environment:
+      PORT: "8083"
+      AWS_REGION: "us-east-1"
+      AWS_DYNAMODB_TABLE: "SolidaryTechVolunteers"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      DISABLE_OTEL: "true"
+    ports:
+      - "8083:8083"
+    networks: [solidarytech]
+
+volumes:
+  postgres_ngo_data:
+  postgres_donation_data:
+
+networks:
+  solidarytech:
+    driver: bridge

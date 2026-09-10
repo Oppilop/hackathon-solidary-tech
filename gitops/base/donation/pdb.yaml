@@ -1,0 +1,12 @@
+# PodDisruptionBudget: durante manutenção voluntária (drain de node, upgrade
+# do cluster) o Kubernetes nunca pode deixar o Hot Path com zero réplicas.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: donation-service-pdb
+  namespace: donation-namespace
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: donation-service

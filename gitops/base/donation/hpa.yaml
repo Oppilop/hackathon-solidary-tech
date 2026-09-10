@@ -1,0 +1,38 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: donation-service-hpa
+  namespace: donation-namespace
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: donation-service
+  # minReplicas=2 mantém a alta disponibilidade do Hot Path mesmo em vale de
+  # tráfego; maxReplicas=8 absorve os picos de aparição na mídia.
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # 65% (mais agressivo que os 70% dos demais): o caminho crítico
+          # precisa escalar ANTES de a latência subir e consumir error budget.
+          averageUtilization: 65
+  behavior:
+    scaleUp:
+      # Reage rápido ao pico.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      # Desce devagar para não derrubar capacidade durante oscilações.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

@@ -1,0 +1,163 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 65.1.1
+    helm:
+      releaseName: kps
+      values: |
+        # ---------- Defaults globais ----------
+        defaultRules:
+          create: true
+
+        # ---------- Prometheus ----------
+        prometheus:
+          prometheusSpec:
+            # Coleta a cada 60s em vez de 15s/30s (economiza ~50% de uso de RAM)
+            scrapeInterval: "60s"
+            evaluationInterval: "60s"
+
+            # Retenção curta para minimizar o tamanho do buffer em RAM no t3.medium
+            # Janela de SLO: o cálculo de error budget precisa de histórico.
+            # 7 dias é o compromisso entre memória do t3.medium e a janela
+            # usada no painel de SRE (ver docs/fase5/SRE-SLO-SLI-SLA.md).
+            retention: 7d
+            retentionSize: "4GB"
+
+            resources:
+              requests: { cpu: 50m, memory: 256Mi }
+              limits:   { cpu: 500m, memory: 768Mi }
+
+            ruleSelectorNilUsesHelmValues: false
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+
+            # CORREÇÃO: sem storageSpec, o Prometheus usa emptyDir (efêmero).
+            # storageSpec com gp2 exigiria o EBS CSI driver + LabRole com
+            # permissão de criar volumes EBS — no AWS Academy o PVC fica
+            # "Pending" e o pod prometheus-...-0 nunca sobe. Para a demo da
+            # Fase 4, emptyDir basta (retention já é curta). Em conta própria
+            # com EBS funcionando, reative:
+            #   storageSpec:
+            #     volumeClaimTemplate:
+            #       spec:
+            #         storageClassName: gp2
+            #         accessModes: ["ReadWriteOnce"]
+            #         resources: { requests: { storage: 5Gi } }
+
+            # Recebe métricas via OTLP do OTel Collector
+            enableRemoteWriteReceiver: true
+
+            # Scrape por anotações em Pods
+            additionalScrapeConfigs:
+              - job_name: 'kubernetes-pods'
+                kubernetes_sd_configs:
+                  - role: pod
+                relabel_configs:
+                  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                    action: keep
+                    regex: true
+                  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                    action: replace
+                    target_label: __metrics_path__
+                    regex: (.+)
+                  - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                    action: replace
+                    regex: ([^:]+)(?::\d+)?;(\d+)
+                    replacement: $1:$2
+                    target_label: __address__
+                  - source_labels: [__meta_kubernetes_namespace]
+                    target_label: namespace
+                  - source_labels: [__meta_kubernetes_pod_name]
+                    target_label: pod
+                  - source_labels: [__meta_kubernetes_pod_label_app]
+                    target_label: app
+                honor_labels: true
+
+        # ---------- Alertmanager ----------
+        alertmanager:
+          alertmanagerSpec:
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits:   { cpu: 100m, memory: 128Mi }
+            configSecret: alertmanager-pagerduty-config
+            useExistingSecret: true
+
+        # ---------- Grafana ----------
+        grafana:
+          adminUser: admin
+          # Senha de demonstração versionada de propósito para o Hackathon
+          # (ambiente efêmero, sem dados reais). Em produção isto seria um
+          # Secret externo — risco registrado em docs/fase5/PCN-DR.md.
+          adminPassword: postech2026
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+          service:
+            type: ClusterIP
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://loki.observability.svc.cluster.local:3100
+              jsonData:
+                maxLines: 500
+                derivedFields:
+                  - datasourceUid: tempo
+                    matcherRegex: "trace_id=(\\w+)"
+                    name: TraceID
+                    url: "$${__value.raw}"
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              folder: /tmp/dashboards
+              searchNamespace: ALL
+            datasources:
+              enabled: true
+              label: grafana_datasource
+              labelValue: "1"
+              searchNamespace: ALL
+          plugins:
+            - grafana-piechart-panel
+
+        # ---------- Auxiliares do Prometheus (Limitados) ----------
+        kube-state-metrics:
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+
+        nodeExporter:
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: donation-postgres-init
+  namespace: donation-namespace
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: postgres:15-alpine
+          command: ["sh", "-c"]
+          args:
+            - psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -f /mnt/init.sql
+          env:
+            - { name: DB_HOST, valueFrom: { secretKeyRef: { name: solidarytech-db-secret, key: DB_HOST } } }
+            - { name: DB_USER, valueFrom: { secretKeyRef: { name: solidarytech-db-secret, key: DB_USER } } }
+            - { name: DB_NAME, valueFrom: { secretKeyRef: { name: solidarytech-db-secret, key: DB_NAME } } }
+            - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: solidarytech-db-secret, key: DB_PASSWORD } } }
+          volumeMounts:
+            - { name: init-sql, mountPath: /mnt }
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "200m", memory: "128Mi" }
+      volumes:
+        - name: init-sql
+          configMap:
+            name: donation-postgres-init-cm
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: donation-postgres-init-cm
+  namespace: donation-namespace
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS donations (
+      id SERIAL PRIMARY KEY,
+      ngo_id INT NOT NULL,
+      amount NUMERIC(10, 2) NOT NULL,
+      donor_name VARCHAR(100) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_donations_ngo_id ON donations (ngo_id);
+    CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations (created_at DESC);

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    name: observability
+    app.kubernetes.io/part-of: solidarytech
+    app.kubernetes.io/managed-by: argocd
+    # Permite que o Prometheus Operator faça scraping em pods deste namespace
+    monitoring: "enabled"

@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: volunteer-service
+  namespace: volunteer-namespace
+  labels:
+    app: volunteer-service
+    app.kubernetes.io/part-of: solidarytech
+    tags.datadoghq.com/service: volunteer-service
+    tags.datadoghq.com/env: production
+    tags.datadoghq.com/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: volunteer-service
+  template:
+    metadata:
+      labels:
+        app: volunteer-service
+        app.kubernetes.io/part-of: solidarytech
+        tags.datadoghq.com/service: volunteer-service
+        tags.datadoghq.com/env: production
+        tags.datadoghq.com/version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9464"
+        prometheus.io/path: "/metrics"
+        ad.datadoghq.com/volunteer-service.logs: '[{"source":"python","service":"volunteer-service"}]'
+    spec:
+      containers:
+        - name: volunteer-service
+          # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
+          image: ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/togglemaster-volunteer:latest
+          imagePullPolicy: Always
+          ports:
+            - { containerPort: 8083, name: http }
+            - { containerPort: 9464, name: metrics }
+          envFrom:
+            - secretRef:
+                name: aws-credentials
+                optional: true
+          env:
+            - name: PORT
+              value: "8083"
+            - name: AWS_REGION
+              valueFrom: { configMapKeyRef: { name: solidarytech-config, key: AWS_REGION } }
+            - name: AWS_DYNAMODB_TABLE
+              valueFrom: { configMapKeyRef: { name: solidarytech-config, key: AWS_DYNAMODB_TABLE } }
+            # ===== OpenTelemetry =====
+            - name: OTEL_SERVICE_NAME
+              value: "volunteer-service"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-opentelemetry-collector.observability.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=solidarytech,deployment.environment=production"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # ===== Tags do Datadog (unified service tagging) =====
+            - name: DD_SERVICE
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/service']" } }
+            - name: DD_ENV
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/env']" } }
+            - name: DD_VERSION
+              valueFrom: { fieldRef: { fieldPath: "metadata.labels['tags.datadoghq.com/version']" } }
+          # RIGHTSIZING (FinOps): a operação de Scan no DynamoDB é o gargalo,
+          # não a CPU do Pod. Baseline medido: ~35m CPU / ~85Mi.
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "300m", memory: "256Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8083 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8083 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]

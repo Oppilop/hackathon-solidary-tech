@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: solidarytech-edge
+  labels:
+    app.kubernetes.io/part-of: solidarytech
+---
+# Services do tipo ExternalName funcionam como "ponte" entre o namespace do
+# edge e os namespaces de cada serviço (o Ingress só enxerga backends do
+# próprio namespace).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ngo-backend
+  namespace: solidarytech-edge
+spec:
+  type: ExternalName
+  externalName: ngo-service.ngo-namespace.svc.cluster.local
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: donation-backend
+  namespace: solidarytech-edge
+spec:
+  type: ExternalName
+  externalName: donation-service.donation-namespace.svc.cluster.local
+  ports:
+    - port: 8082
+      targetPort: 8082
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: volunteer-backend
+  namespace: solidarytech-edge
+spec:
+  type: ExternalName
+  externalName: volunteer-service.volunteer-namespace.svc.cluster.local
+  ports:
+    - port: 8083
+      targetPort: 8083
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: solidarytech-ingress
+  namespace: solidarytech-edge
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    # Rate limit no edge: protege o Hot Path de rajadas anormais (e de bots)
+    # antes que elas cheguem ao banco.
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+spec:
+  ingressClassName: nginx
+  rules:
+    # O prefixo /api/<serviço> seleciona o backend e é REMOVIDO pelo rewrite.
+    # Assim o path original da aplicação é preservado:
+    #   GET  /api/donation/health     -> donation-service:8082/health
+    #   POST /api/donation/donations  -> donation-service:8082/donations
+    - http:
+        paths:
+          - path: /api/ngo(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ngo-backend
+                port:
+                  number: 8081
+          - path: /api/donation(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: donation-backend
+                port:
+                  number: 8082
+          - path: /api/volunteer(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: volunteer-backend
+                port:
+                  number: 8083
