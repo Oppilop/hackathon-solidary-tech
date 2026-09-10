@@ -133,6 +133,7 @@ module "finops" {
 # ─────────────────────────────────────────────────────────────────────────────
 module "dr_backup" {
   source = "./modules/dr-backup"
+  count  = var.enable_dr_backup_bucket ? 1 : 0
 
   bucket_name = var.velero_bucket_name
   tags = merge(local.common_tags, {
