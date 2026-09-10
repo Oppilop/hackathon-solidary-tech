@@ -1,5 +1,3 @@
-
-
 import logging
 import os
 
@@ -43,7 +41,6 @@ def init_telemetry(flask_app=None, service_name: str | None = None) -> None:
         )
         trace.set_tracer_provider(provider)
 
-
         from opentelemetry import metrics
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -69,7 +66,6 @@ def init_telemetry(flask_app=None, service_name: str | None = None) -> None:
             OTLPMetricExporter(endpoint=f"{endpoint}/v1/metrics"),
             export_interval_millis=30_000,
         )
-
 
         from opentelemetry.sdk.metrics.view import View, ExplicitBucketHistogramAggregation
 
@@ -165,7 +161,6 @@ def _register_flask_http_metrics(flask_app, service_name: str) -> None:
 
     meter = metrics.get_meter("solidarytech.http", "1.0.0")
 
-
     requests_total = meter.create_counter(
         name="http_requests",
         description="Total de requisições HTTP processadas",
@@ -204,3 +199,4 @@ def _register_flask_http_metrics(flask_app, service_name: str) -> None:
             # Nunca deixar a coleta de métrica quebrar a resposta ao usuário
             pass
         return response
+
