@@ -1,6 +1,9 @@
 provider "aws" {
   region = var.aws_region
 
+  # Evita chamadas de verificação de checksum do S3 bloqueadas por SCPs padrão de Labs
+  skip_s3_checksum = true
+
   # Rede de segurança do tagueamento: qualquer recurso criado por qualquer
   # módulo herda as tags obrigatórias de FinOps.
   default_tags {
@@ -14,6 +17,8 @@ provider "aws" {
   alias  = "dr"
   region = var.dr_region
 
+  skip_s3_checksum = true
+
   default_tags {
     tags = local.common_tags
   }
@@ -21,7 +26,7 @@ provider "aws" {
 
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+  cluster_ca_certificate = module.eks.cluster_ca_certificate != null && module.eks.cluster_ca_certificate != "" ? base64decode(module.eks.cluster_ca_certificate) : ""
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -32,7 +37,7 @@ provider "kubernetes" {
 
 provider "kubectl" {
   host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = module.eks.cluster_ca_certificate != null ? base64decode(module.eks.cluster_ca_certificate) : ""
+  cluster_ca_certificate = module.eks.cluster_ca_certificate != null && module.eks.cluster_ca_certificate != "" ? base64decode(module.eks.cluster_ca_certificate) : ""
   load_config_file       = false
 
   exec {
@@ -45,7 +50,7 @@ provider "kubectl" {
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+    cluster_ca_certificate = module.eks.cluster_ca_certificate != null && module.eks.cluster_ca_certificate != "" ? base64decode(module.eks.cluster_ca_certificate) : ""
 
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
