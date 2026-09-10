@@ -27,7 +27,7 @@ output "dynamodb_table" {
 
 output "velero_backup_bucket" {
   description = "Bucket S3 (região de DR) usado pelo Velero."
-  value       = module.dr_backup.bucket_name
+  value       = one(module.dr_backup[*].bucket_name)
 }
 
 output "velero_backup_region" {
@@ -54,3 +54,4 @@ output "finops_tags_applied" {
   description = "Tags obrigatórias aplicadas a todos os recursos (evidência de FinOps)."
   value       = local.common_tags
 }
+
