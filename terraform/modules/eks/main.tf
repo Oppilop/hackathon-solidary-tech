@@ -46,6 +46,11 @@ resource "aws_eks_node_group" "this" {
   instance_types  = var.instance_types
   capacity_type   = "ON_DEMAND"
 
+  # Sem ami_type explícito o provider assume AL2_x86_64 (Amazon Linux 2), cujas
+  # AMIs a AWS descontinuou — o CreateNodegroup falha com
+  # "Requested AMI for this version is not supported".
+  ami_type = var.ami_type
+
   scaling_config {
     desired_size = var.desired_size
     max_size     = var.max_size
