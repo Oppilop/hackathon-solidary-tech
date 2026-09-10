@@ -2,5 +2,6 @@
 # Ver .github/workflows/terraform-infra.yml.
 terraform {
   backend "s3" {
+    skip_s3_checksum = true
   }
 }

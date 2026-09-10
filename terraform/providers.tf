@@ -1,9 +1,6 @@
 provider "aws" {
   region = var.aws_region
 
-  # Evita chamadas de verificação de checksum do S3 bloqueadas por SCPs padrão de Labs
-  skip_s3_checksum = true
-
   # Rede de segurança do tagueamento: qualquer recurso criado por qualquer
   # módulo herda as tags obrigatórias de FinOps.
   default_tags {
@@ -17,7 +14,6 @@ provider "aws" {
   alias  = "dr"
   region = var.dr_region
 
-  skip_s3_checksum = true
 
   default_tags {
     tags = local.common_tags
