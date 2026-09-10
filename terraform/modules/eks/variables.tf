@@ -30,6 +30,16 @@ variable "instance_types" {
   default     = ["t3.medium"]
 }
 
+variable "ami_type" {
+  description = <<-EOT
+    AMI do node group. O default do provider (AL2_x86_64) foi descontinuado pela
+    AWS e faz o CreateNodegroup falhar. Se a versão do Kubernetes for antiga
+    demais para ter AMI publicada, suba var.kubernetes_version.
+  EOT
+  type        = string
+  default     = "AL2023_x86_64_STANDARD"
+}
+
 variable "desired_size" {
   description = "Quantidade desejada de nodes."
   type        = number

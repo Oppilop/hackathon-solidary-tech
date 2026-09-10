@@ -20,8 +20,11 @@ resource "aws_budgets_budget" "monthly" {
   time_unit    = "MONTHLY"
 
   cost_filter {
-    name   = "TagKeyValue"
-    values = ["user:Project$$${var.cost_tag_project}"]
+    name = "TagKeyValue"
+    # O formato exigido pela API do Budgets é "user:<TagKey>$<TagValue>".
+    # É preciso usar format() porque, em HCL, "$${" é a sequência de escape
+    # que produz "${" literal — escrever "$$${var...}" NÃO interpola a variável.
+    values = [format("user:Project$%s", var.cost_tag_project)]
   }
 
   # 80% do orçamento consumido — ainda dá tempo de reagir.
