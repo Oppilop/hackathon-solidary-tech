@@ -1,32 +1,23 @@
 provider "aws" {
   region = var.aws_region
 
-  # Bypasses necessários para a SCP restritiva do AWS Academy / Vocareum
-  skip_metadata_api_check = true
+  # Bypasses para restrições da SCP do AWS Lab
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  skip_credentials_validation = true
 
-  # Ignora a chamada s3:GetBucketObjectLockConfiguration bloqueada pela SCP
-  custom_lookups {
-    skip_s3_bucket_object_lock_configuration = true
-  }
-
-  # Rede de segurança do tagueamento: qualquer recurso criado por qualquer
-  # módulo herda as tags obrigatórias de FinOps.
   default_tags {
     tags = local.common_tags
   }
 }
 
-# Provider alternativo apontando para a região de DR. Usado pelo bucket de
-# backup do Velero (cross-region) — requisito 4, Opção A.
 provider "aws" {
   alias  = "dr"
   region = var.dr_region
 
-  skip_metadata_api_check = true
-
-  custom_lookups {
-    skip_s3_bucket_object_lock_configuration = true
-  }
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  skip_credentials_validation = true
 
   default_tags {
     tags = local.common_tags

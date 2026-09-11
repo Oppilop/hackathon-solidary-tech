@@ -11,7 +11,7 @@ locals {
 resource "aws_s3_bucket" "velero" {
   bucket              = local.effective_bucket_name
   force_destroy       = true
-  object_lock_enabled = false # <--- Impede a chamada s3:GetBucketObjectLockConfiguration bloqueada pela SCP
+  object_lock_enabled = false # Garante que o provider saiba que Object Lock não está em uso sem ler a API
 
   tags = merge(var.tags, {
     Name = local.effective_bucket_name
