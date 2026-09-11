@@ -203,7 +203,6 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   # 2) APPLY
   # ═══════════════════════════════════════════════════════════════════════════
-  
   terraform-apply:
     name: Importar Velero Bucket se já existir na AWS
     continue-on-error: true
