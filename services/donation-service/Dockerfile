@@ -25,12 +25,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates \
- && addgroup -S app && adduser -S -G app app
+ && addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 
 WORKDIR /app
 COPY --from=builder /app/donation-service .
 RUN chown -R app:app /app
-USER app
+USER 10001
 
 # 8082: API HTTP. 9464: /metrics no formato Prometheus.
 EXPOSE 8082 9464

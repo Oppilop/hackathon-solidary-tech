@@ -18,7 +18,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r app && useradd -r -g app -d /app app \
+    && groupadd -r -g 10001 app && useradd -r -u 10001 -g app -d /app app \
     && chown -R app:app /app
 
 COPY --from=builder --chown=app:app /app/.local /app/.local
@@ -28,7 +28,7 @@ ENV PATH=/app/.local/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-USER app
+USER 10001
 
 # 8083: API HTTP. 9464: /metrics no formato Prometheus.
 EXPOSE 8083 9464
