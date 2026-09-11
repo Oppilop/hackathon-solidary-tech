@@ -203,32 +203,49 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
   # 2) APPLY
   # ═══════════════════════════════════════════════════════════════════════════
+  
   terraform-apply:
-    name: Terraform Apply
-    runs-on: ubuntu-latest
-    env:
-      TF_VAR_aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      TF_VAR_aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      TF_VAR_aws_session_token: ${{ secrets.AWS_SESSION_TOKEN }}
-    needs: terraform-plan
-    if: |
-      (github.event_name == 'workflow_dispatch' && inputs.action == 'apply') ||
-      (github.event_name == 'push' && needs.terraform-plan.outputs.has_changes == 'true')
-    environment:
-      name: production
-    outputs:
-      cluster_name: ${{ steps.outputs.outputs.cluster_name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+     - name: Importar Velero Bucket se já existir na AWS
+        continue-on-error: true
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          # 1. Obtém o Account ID da sessão atual da AWS
+          ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+          BUCKET_NAME="togglemaster-solidarytech-velero-backups-${ACCOUNT_ID}"
+          
+          echo "Verificando se o bucket $BUCKET_NAME existe na conta..."
+          if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+            echo "Bucket $BUCKET_NAME encontrado na AWS. Importando para o Terraform State..."
+            terraform import -input=false 'module.dr_backup[0].aws_s3_bucket.velero' "$BUCKET_NAME" || true
+          else
+            echo "Bucket não existe previamente. Seguirá fluxo normal de criação."
+          fi
+          
+     - name: Terraform Apply
+        runs-on: ubuntu-latest
+        env:
+          TF_VAR_aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          TF_VAR_aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_aws_session_token: ${{ secrets.AWS_SESSION_TOKEN }}
+        needs: terraform-plan
+        if: |
+          (github.event_name == 'workflow_dispatch' && inputs.action == 'apply') ||
+          (github.event_name == 'push' && needs.terraform-plan.outputs.has_changes == 'true')
+        environment:
+          name: production
+        outputs:
+          cluster_name: ${{ steps.outputs.outputs.cluster_name }}
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
+          - name: Configure AWS credentials
+            uses: aws-actions/configure-aws-credentials@v4
+            with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+              aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
