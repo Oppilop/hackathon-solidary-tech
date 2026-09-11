@@ -146,7 +146,7 @@ variable "enable_dr_backup_bucket" {
     Ver docs/fase5/PCN-DR.md, seção 8.2 (riscos aceitos).
   EOT
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "monthly_budget_usd" {
