@@ -9,8 +9,8 @@ locals {
 }
 
 resource "aws_s3_bucket" "velero" {
-  bucket              = local.effective_bucket_name
-  force_destroy       = true
+  bucket        = local.effective_bucket_name
+  force_destroy = true
 
   tags = merge(var.tags, {
     Name = local.effective_bucket_name
