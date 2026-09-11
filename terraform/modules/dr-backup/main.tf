@@ -1,24 +1,25 @@
 # =============================================================================
 # Módulo: DR Backup Storage (Opção A do requisito 4)
-#
-# Bucket S3 na REGIÃO SECUNDÁRIA que recebe os backups do Velero (manifestos
-# do cluster + snapshots de volumes). Está em outra região de propósito: se a
-# região primária ficar indisponível, o backup continua acessível para
-# restaurar o ambiente no cluster espelho.
-#
-# O provider `aws` deste módulo é injetado com alias `aws.dr` pelo root module.
 # =============================================================================
 
+# Obtém o ID da conta AWS para garantir unicidade global no S3
+data "aws_caller_identity" "current" {}
+
+locals {
+  # Adiciona os dígitos da conta AWS ao final do nome base do bucket
+  effective_bucket_name = "${var.bucket_name}-${data.aws_caller_identity.current.account_id}"
+}
+
 resource "aws_s3_bucket" "velero" {
-  bucket = var.bucket_name
+  bucket        = local.effective_bucket_name
+  force_destroy = true
 
   tags = merge(var.tags, {
-    Name = var.bucket_name
+    Name = local.effective_bucket_name
   })
 }
 
-# Versionamento: protege contra sobrescrita/corrupção e contra ransomware que
-# tente apagar backups.
+# Versionamento: protege contra sobrescrita/corrupção
 resource "aws_s3_bucket_versioning" "velero" {
   bucket = aws_s3_bucket.velero.id
 
@@ -47,10 +48,7 @@ resource "aws_s3_bucket_public_access_block" "velero" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Ciclo de vida (FinOps): backup só é caro quando fica em Standard para sempre.
-#   - 30 dias  -> STANDARD_IA (menos da metade do preço por GB)
-#   - 90 dias  -> expira (a retenção do Velero é de 30 dias por padrão)
-#   - versões antigas expiram em 30 dias
+# Ciclo de vida (FinOps)
 # ─────────────────────────────────────────────────────────────────────────────
 resource "aws_s3_bucket_lifecycle_configuration" "velero" {
   bucket = aws_s3_bucket.velero.id
