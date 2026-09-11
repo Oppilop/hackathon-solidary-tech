@@ -2,17 +2,16 @@
 # Módulo: DR Backup Storage (Opção A do requisito 4)
 # =============================================================================
 
-# Obtém o ID da conta AWS para garantir unicidade global no S3
 data "aws_caller_identity" "current" {}
 
 locals {
-  # Adiciona os dígitos da conta AWS ao final do nome base do bucket
   effective_bucket_name = "${var.bucket_name}-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_s3_bucket" "velero" {
-  bucket        = local.effective_bucket_name
-  force_destroy = true
+  bucket              = local.effective_bucket_name
+  force_destroy       = true
+  object_lock_enabled = false # <--- Impede a chamada s3:GetBucketObjectLockConfiguration bloqueada pela SCP
 
   tags = merge(var.tags, {
     Name = local.effective_bucket_name
