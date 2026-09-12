@@ -35,6 +35,16 @@ spec:
           useSecret: true
           existingSecret: velero-credentials
 
+        # ---------- Imagem do kubectl (job de CRDs) ----------
+        # A Bitnami removeu suas imagens publicas do Docker Hub: o default do
+        # chart (docker.io/bitnami/kubectl) retorna 404 e o job velero-upgrade-crds
+        # fica em ImagePullBackOff, impedindo a criacao das CRDs. bitnamilegacy e
+        # o namespace para onde as imagens antigas foram movidas.
+        kubectl:
+          image:
+            repository: docker.io/bitnamilegacy/kubectl
+            tag: "1.30"
+
         # ---------- Plugin da AWS ----------
         initContainers:
           - name: velero-plugin-for-aws
