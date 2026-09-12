@@ -45,10 +45,17 @@ spec:
             repository: docker.io/bitnamilegacy/kubectl
             tag: "1.30"
 
+        # ---------- Imagem principal ----------
+        # O containerd do EKS resolve imagens sem registry para public.ecr.aws,
+        # onde o Velero nao publica. Fixamos docker.io explicitamente.
+        image:
+          repository: docker.io/velero/velero
+          tag: v1.14.1
+
         # ---------- Plugin da AWS ----------
         initContainers:
           - name: velero-plugin-for-aws
-            image: public.ecr.aws/vmware-tanzu/velero-plugin-for-aws:v1.10.1
+            image: docker.io/velero/velero-plugin-for-aws:v1.10.1
             imagePullPolicy: IfNotPresent
             volumeMounts:
               - mountPath: /target
