@@ -53,7 +53,7 @@ spec:
       containers:
         - name: donation-service
           # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
-          image: 993826904628.dkr.ecr.us-east-1.amazonaws.com/togglemaster-donation:v1.0.0-30f0df4
+          image: 993826904628.dkr.ecr.us-east-1.amazonaws.com/togglemaster-donation:v1.0.0-3777b4f
           imagePullPolicy: Always
           ports:
             - { containerPort: 8082, name: http }
