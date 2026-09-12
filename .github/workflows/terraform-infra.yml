@@ -379,7 +379,7 @@ jobs:
           kubectl create namespace observability \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          SITE="${DD_SITE:-us5.datadoghq.com}"
+          SITE="${DD_SITE:-datadoghq.com}"
           # NORMALIZAÇÃO CRÍTICA: o exporter do Datadog monta as URLs como
           # "https://trace.agent.${SITE}". Se o valor vier com protocolo, gera
           # uma URL quebrada e o Collector DESCARTA toda a telemetria.

@@ -20,7 +20,7 @@ spec:
         # ---------- Identificação ----------
         datadog:
           apiKeyExistingSecret: datadog-secret
-          site: us5.datadoghq.com
+          site: datadoghq.com
           clusterName: solidarytech-eks-prod
           # Tags herdadas por TODA telemetria enviada ao Datadog — é o que
           # permite cruzar custo (FinOps) e confiabilidade (SRE) por CostCenter.
