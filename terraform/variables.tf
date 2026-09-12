@@ -137,16 +137,19 @@ variable "enable_cost_guardrails" {
 
 variable "enable_dr_backup_bucket" {
   description = <<-EOT
-    Cria o bucket S3 de backup do Velero na dr_region. Algumas contas de
-    laboratório (AWS Academy) têm uma SCP que nega s3:GetBucketObjectLockConfiguration,
-    chamada que o provider faz em TODA leitura de aws_s3_bucket — o que quebra
-    qualquer plan/apply seguinte, mesmo com o bucket já criado.
-    Nesse caso, defina como false, crie o bucket pela AWS CLI e remova-o do state:
-      terraform state rm 'module.dr_backup[0].aws_s3_bucket.velero'
-    Ver docs/fase5/PCN-DR.md, seção 8.2 (riscos aceitos).
+    Provisiona o bucket S3 de backup do Velero na dr_region.
+
+    O módulo cria o bucket via AWS CLI (terraform_data + local-exec) em vez do
+    recurso nativo aws_s3_bucket. Motivo: a SCP da conta nega
+    s3:GetBucketObjectLockConfiguration, chamada que o provider faz no
+    read-after-create de todo aws_s3_bucket — o bucket era criado mas o apply
+    falhava e ele nunca entrava no state. Ver terraform/modules/dr-backup.
+
+    As proteções aplicadas são as mesmas dos recursos nativos: versionamento,
+    SSE-AES256, bloqueio de acesso público, tags e lifecycle de FinOps.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "monthly_budget_usd" {

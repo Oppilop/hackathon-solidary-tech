@@ -1,5 +1,10 @@
 variable "bucket_name" {
-  description = "Nome global do bucket de backups do Velero."
+  description = "Prefixo do bucket de backups do Velero. O account id é anexado para garantir unicidade global."
+  type        = string
+}
+
+variable "region" {
+  description = "Região onde o bucket é criado (a região de DR, diferente da primária)."
   type        = string
 }
 

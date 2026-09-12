@@ -136,6 +136,7 @@ module "dr_backup" {
   count  = var.enable_dr_backup_bucket ? 1 : 0
 
   bucket_name = var.velero_bucket_name
+  region      = var.dr_region
   tags = merge(local.common_tags, {
     Purpose = "disaster-recovery"
   })
