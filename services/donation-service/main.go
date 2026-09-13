@@ -49,7 +49,7 @@ func main() {
 		port = "8082"
 	}
 
-	// Fase 5: OpenTelemetry (traces + métricas + /metrics em :9464)
+	// Fase 5: OpenTelemetry (traces + métricas + /metrics em :9464).
 	ctx := context.Background()
 	shutdownTelemetry, err := telemetry.Init(ctx, "donation-service")
 	if err != nil {
