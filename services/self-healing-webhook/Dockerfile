@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 
 RUN apt-get update && apt-get upgrade -y \
-    groupadd -r -g 10001 app && useradd -r -u 10001 -g app -d /app app \
+    && groupadd -r -g 10001 app && useradd -r -u 10001 -g app -d /app app \
     && chown -R app:app /app
 
 COPY --chown=app:app main.py .
