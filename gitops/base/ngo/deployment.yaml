@@ -31,7 +31,7 @@ spec:
       containers:
         - name: ngo-service
           # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
-          image: 993826904628.dkr.ecr.us-east-1.amazonaws.com/togglemaster-ngo:v1.0.0-3777b4f
+          image: 318738644849.dkr.ecr.us-east-1.amazonaws.com/togglemaster-ngo:v1.0.0-7982dcc
           imagePullPolicy: Always
           ports:
             - { containerPort: 8081, name: http }
