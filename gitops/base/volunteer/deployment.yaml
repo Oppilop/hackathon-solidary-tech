@@ -31,7 +31,7 @@ spec:
       containers:
         - name: volunteer-service
           # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
-          image: 993826904628.dkr.ecr.us-east-1.amazonaws.com/togglemaster-volunteer:v1.0.0-3777b4f
+          image: 318738644849.dkr.ecr.us-east-1.amazonaws.com/togglemaster-volunteer:v1.0.0-9bf245f
           imagePullPolicy: Always
           ports:
             - { containerPort: 8083, name: http }
