@@ -29,7 +29,7 @@
 | `TF_STATE_BUCKET` | Nome global único, ex.: `solidarytech-tfstate-<seu-rm>` | ✅ |
 | `GITOPS_TOKEN` | PAT com escopo `repo` (para o CI commitar o bump da imagem) | Recomendado |
 | `DD_API_KEY` | Datadog → Organization Settings → API Keys | ✅ |
-| `DD_SITE` | ex.: `us5.datadoghq.com` (**sem** `https://`) | ✅ |
+| `DD_SITE` | Região da conta, **sem** `https://`. US1 = `datadoghq.com` (sem prefixo!), US3/US5 = `us3...`/`us5.datadoghq.com`, EU = `datadoghq.eu`. Confira na URL do seu Datadog — errar a região faz o agente descartar a telemetria **em silêncio**. | ✅ |
 | `PAGERDUTY_INTEGRATION_KEY` | Serviço no PagerDuty → Integrations → Events API V2 | ✅ |
 | `DISCORD_WEBHOOK_URL` | URL do webhook **+ sufixo `/slack`** | ✅ |
 

@@ -45,12 +45,11 @@ spec:
           # 1) processor k8sattributes -> enriquece telemetria com metadados
           #    (precisa de pods, namespaces, replicasets, nodes)
           #
-          # 2) receiver k8s_cluster -> coleta métricas de nível de CLUSTER
-          #    (precisa listar praticamente todos os workloads). Sem estas
-          #    regras o collector entra em LOOP de erros
-          #    "... is forbidden: User system:serviceaccount:observability:
-          #     otel-opentelemetry-collector cannot list resource ..."
-          #    e nenhuma métrica de cluster é coletada.
+          # 2) as regras abaixo são mais amplas do que o k8sattributes exige
+          #    porque o receiver k8s_cluster já foi usado aqui. Ele foi
+          #    removido (ver NOTA na seção de receivers) — as permissões
+          #    extras ficam por serem inofensivas em leitura e para o caso de
+          #    o receiver voltar num Deployment dedicado.
           rules:
             - apiGroups: [""]
               resources:
@@ -158,9 +157,14 @@ spec:
                 filesystem: {}
                 load: {}
                 network: {}
-            k8s_cluster:
-              auth_type: serviceAccount
-              collection_interval: 30s
+            # NOTA: o receiver k8s_cluster foi REMOVIDO de propósito.
+            # Ele coleta o estado do cluster inteiro e é feito para rodar em
+            # instância única — mas este Collector é um DaemonSet, então os 3
+            # pods coletavam as MESMAS séries e as gravavam no mesmo Prometheus,
+            # que rejeitava as repetições com "out of order sample"
+            # (579 amostras descartadas a cada 30s).
+            # Nada se perdeu: essas métricas já chegam ao Prometheus pelo
+            # kube-state-metrics e ao Datadog pelo orchestratorExplorer.
 
           # ===== PROCESSORS =====
           processors:
@@ -254,7 +258,7 @@ spec:
                 processors: [memory_limiter, k8sattributes, resource, batch]
                 exporters:  [datadog, debug]
               metrics:
-                receivers:  [hostmetrics, k8s_cluster]
+                receivers:  [hostmetrics]
                 processors: [memory_limiter, k8sattributes, resource, batch]
                 exporters:  [prometheusremotewrite, datadog]
               metrics/app:

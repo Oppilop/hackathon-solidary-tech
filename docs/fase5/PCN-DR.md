@@ -213,6 +213,8 @@ do DNS → `terraform -chdir=terraform/dr destroy`.
 | Senha do Grafana versionada | Ambiente efêmero, sem dados reais | Ambiente descartável, acesso só por port-forward | Secret externo / SSO |
 | Prometheus em `emptyDir` | EBS CSI driver indisponível | Retenção de 7 dias; Datadog mantém o histórico longo | `storageSpec` com PVC gp3 |
 | Sem WAF / TLS no ingress | Sem domínio nem certificado no laboratório | Rate limit de 50 rps no ingress | ACM + AWS WAF |
+| Bucket de DR provisionado por AWS CLI, não pelo recurso nativo | A SCP da conta nega `s3:GetBucketObjectLockConfiguration` — chamada que o provider AWS faz no *read-after-create* de todo `aws_s3_bucket`. O bucket era criado, o apply falhava logo depois e ele nunca entrava no state | O módulo `dr-backup` usa `terraform_data` + `local-exec`: o bucket continua nascendo de `terraform apply`, com versionamento, SSE-AES256, bloqueio público, tags e lifecycle | Em conta sem a SCP, voltar aos recursos nativos `aws_s3_bucket*` |
+| Imagens com registry explícito (`docker.io/...`) | O containerd do EKS resolve imagens sem registry para `public.ecr.aws`, onde o Velero não publica — o pod ficava em `ErrImagePull` | Todas as imagens de terceiros declaram o registry completo nos manifestos | Nenhuma — é boa prática manter, independente do ambiente |
 
 Todos foram apresentados e aceitos formalmente como riscos de ambiente
 acadêmico. Nenhum deles altera a arquitetura — são flags de configuração.

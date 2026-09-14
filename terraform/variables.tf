@@ -171,7 +171,7 @@ variable "velero_bucket_name" {
   description = <<-EOT
     Nome do bucket S3 (na dr_region) que guarda os backups do Velero.
     ATENÇÃO: nomes de bucket são globais. Se alterar aqui, altere também em
-    gitops/base/observability/09-velero.yaml (values.configuration.backupStorageLocation).
+    gitops/base/observability/08-velero.yaml (values.configuration.backupStorageLocation).
   EOT
   type        = string
   default     = "togglemaster-solidarytech-velero-backups"

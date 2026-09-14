@@ -28,9 +28,11 @@ Telemetria (OTLP) → OTel Collector ─┬→ Datadog APM (traces + Watchdog/AI
                                         Grafana (painel SRE: SLO/Error Budget)
                                             ↓
                                        Alertmanager
-                                            ↓
-                                  PagerDuty ─┬→ Discord (#incidentes)
-                                             └→ self-healing-webhook → rollout restart
+                                            │
+                          ┌─────────────────┼─────────────────┐
+                          ↓                 ↓                 ↓
+                     PagerDuty        Discord          self-healing-webhook
+                    (incidente)     (#incidentes)      → rollout restart
 
 DR: Velero → bucket S3 em us-west-2   ·   terraform/dr → Warm Standby em 1 comando
 ```

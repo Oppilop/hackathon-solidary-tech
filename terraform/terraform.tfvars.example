@@ -18,7 +18,7 @@ enable_elasticache        = false
 
 # --- Disaster Recovery ---
 # Nome global: troque para algo único na sua conta e replique o mesmo valor em
-# gitops/base/observability/09-velero.yaml.
+# gitops/base/observability/08-velero.yaml.
 velero_bucket_name       = "togglemaster-solidarytech-velero-backups"
 db_backup_retention_days = 7
 
