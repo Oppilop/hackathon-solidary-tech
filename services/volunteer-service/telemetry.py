@@ -93,33 +93,45 @@ def init_telemetry(flask_app=None, service_name: str | None = None) -> None:
 
             _register_flask_http_metrics(flask_app, service_name)
 
-        # Requests (chamadas HTTP de saída — auth-service chama flag-service, etc.)
+        # ATENCAO ao except destes blocos: capturar apenas ImportError deixa
+        # passar o DependencyConflict que os instrumentadores lancam quando a
+        # checagem de versao falha. Como a excecao escapava, o primeiro
+        # instrumentador com problema abortava TODOS os seguintes -- era assim
+        # que o psycopg2 derrubava, em silencio, os spans de SQS/DynamoDB e a
+        # injecao de trace_id nos logs. Cada bloco agora falha sozinho.
+
+        # Requests (chamadas HTTP de saida entre os microsservicos)
         try:
             from opentelemetry.instrumentation.requests import RequestsInstrumentor
             RequestsInstrumentor().instrument()
-        except ImportError:
-            pass
+        except Exception as e:  # noqa: BLE001
+            log.warning("instrumentacao de requests indisponivel: %s", e)
 
-        # Psycopg2 (chamadas a PostgreSQL viram spans automáticos)
+        # Psycopg2 (chamadas a PostgreSQL viram spans automaticos)
+        # skip_dep_check=True: usamos psycopg2-binary, cujo pacote se chama
+        # "psycopg2-binary" embora o modulo importado seja "psycopg2". O
+        # instrumentador confere pelo nome do pacote e lanca
+        # DependencyConflict('requested: "psycopg2" ... but found: "None"')
+        # mesmo com o modulo presente e funcional.
         try:
             from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
-            Psycopg2Instrumentor().instrument()
-        except ImportError:
-            pass
+            Psycopg2Instrumentor().instrument(skip_dep_check=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("instrumentacao de psycopg2 indisponivel: %s", e)
 
-        # Boto3/SDK AWS (SQS, DynamoDB do analytics-service)
+        # Boto3/SDK AWS -- e o que gera os spans de SQS e DynamoDB
         try:
             from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
             BotocoreInstrumentor().instrument()
-        except ImportError:
-            pass
+        except Exception as e:  # noqa: BLE001
+            log.warning("instrumentacao de botocore indisponivel: %s", e)
 
         # Logging: injeta trace_id em todos os logs do Python
         try:
             from opentelemetry.instrumentation.logging import LoggingInstrumentor
             LoggingInstrumentor().instrument(set_logging_format=True)
-        except ImportError:
-            pass
+        except Exception as e:  # noqa: BLE001
+            log.warning("instrumentacao de logging indisponivel: %s", e)
 
         log.info(
             "OpenTelemetry inicializado",

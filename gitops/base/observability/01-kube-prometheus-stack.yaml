@@ -20,6 +20,27 @@ spec:
         # ---------- Defaults globais ----------
         defaultRules:
           create: true
+          # No EKS o control plane e gerenciado pela AWS e nao expoe estas
+          # metricas. As regras padrao do chart interpretam a ausencia como
+          # "componente fora do ar" e disparam KubeControllerManagerDown e
+          # KubeSchedulerDown permanentemente -- alarme falso que polui o
+          # painel e gera fadiga de alerta. Desligadas de proposito.
+          rules:
+            kubeControllerManager: false
+            kubeScheduler: false
+            kubeProxy: false
+            etcd: false
+
+        # Sem estes componentes o chart tambem nao tenta criar os ServiceMonitor
+        # que ficariam eternamente sem alvo (targets "down" no Prometheus).
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
 
         # ---------- Prometheus ----------
         prometheus:

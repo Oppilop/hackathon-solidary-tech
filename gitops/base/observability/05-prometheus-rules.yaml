@@ -38,27 +38,44 @@ spec:
       interval: 30s
       rules:
         # --- SLI de disponibilidade: proporção de requisições COM ERRO ---
+        # `or vector(0)` é obrigatório: enquanto NENHUM 5xx tiver ocorrido, a
+        # série de erro não existe no Prometheus e a divisão inteira retorna
+        # vazio — os painéis de SLO e de error budget mostrariam "No data"
+        # justamente quando o serviço está perfeito. Com o fallback, ausência
+        # de erro vira 0 e o SLI lê 100%, que é a verdade.
         - record: solidarytech:donation:error_ratio_rate5m
           expr: |
-            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[5m]))
+            (
+              sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[5m]))
+              or vector(0)
+            )
             /
             sum(rate(http_requests_total{service="donation-service"}[5m]))
 
         - record: solidarytech:donation:error_ratio_rate30m
           expr: |
-            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[30m]))
+            (
+              sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[30m]))
+              or vector(0)
+            )
             /
             sum(rate(http_requests_total{service="donation-service"}[30m]))
 
         - record: solidarytech:donation:error_ratio_rate1h
           expr: |
-            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[1h]))
+            (
+              sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[1h]))
+              or vector(0)
+            )
             /
             sum(rate(http_requests_total{service="donation-service"}[1h]))
 
         - record: solidarytech:donation:error_ratio_rate6h
           expr: |
-            sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[6h]))
+            (
+              sum(rate(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[6h]))
+              or vector(0)
+            )
             /
             sum(rate(http_requests_total{service="donation-service"}[6h]))
 
@@ -66,7 +83,10 @@ spec:
         - record: solidarytech:donation:availability_ratio_7d
           expr: |
             1 - (
-              sum(increase(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[7d]))
+              (
+                sum(increase(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[7d]))
+                or vector(0)
+              )
               /
               sum(increase(http_requests_total{service="donation-service"}[7d]))
             )
@@ -77,7 +97,10 @@ spec:
         - record: solidarytech:donation:error_budget_remaining_7d
           expr: |
             1 - (
-              sum(increase(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[7d]))
+              (
+                sum(increase(http_requests_total{service="donation-service",http_response_status_code=~"5.."}[7d]))
+                or vector(0)
+              )
               /
               (sum(increase(http_requests_total{service="donation-service"}[7d])) * 0.001)
             )
