@@ -18,13 +18,13 @@ variable "dr_region" {
 variable "project" {
   description = "Prefixo de nomenclatura usado em todos os recursos AWS."
   type        = string
-  default     = "togglemaster"
+  default     = "solidarytech"
 }
 
 variable "cluster_name" {
   description = "Nome do cluster EKS."
   type        = string
-  default     = "togglemaster-eks-prod"
+  default     = "solidarytech-eks-prod"
 }
 
 variable "kubernetes_version" {
@@ -174,7 +174,7 @@ variable "velero_bucket_name" {
     gitops/base/observability/08-velero.yaml (values.configuration.backupStorageLocation).
   EOT
   type        = string
-  default     = "togglemaster-solidarytech-velero-backups"
+  default     = "solidarytech-velero-backups"
 }
 
 variable "db_backup_retention_days" {

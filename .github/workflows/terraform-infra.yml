@@ -140,7 +140,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
-          BUCKET_NAME="togglemaster-solidarytech-velero-backups-${ACCOUNT_ID}"
+          BUCKET_NAME="solidarytech-velero-backups-${ACCOUNT_ID}"
           
           echo "Verificando se o bucket $BUCKET_NAME existe..."
           if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
@@ -287,7 +287,7 @@ jobs:
         run: |
           if [ ! -f tfplan ]; then
             ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
-            BUCKET_NAME="togglemaster-solidarytech-velero-backups-${ACCOUNT_ID}"
+            BUCKET_NAME="solidarytech-velero-backups-${ACCOUNT_ID}"
             
             echo "Verificando e limpando bucket $BUCKET_NAME antes do apply direto..."
             aws s3 rb "s3://${BUCKET_NAME}" --force || true
@@ -522,7 +522,7 @@ jobs:
         continue-on-error: true
         run: |
           # O bucket tem versionamento: o destroy falha se ele não estiver vazio.
-          BUCKET="togglemaster-solidarytech-velero-backups"
+          BUCKET="solidarytech-velero-backups"
           echo "Removendo objetos e versões de $BUCKET..."
           aws s3api list-object-versions --bucket "$BUCKET" \
             --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \

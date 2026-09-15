@@ -113,7 +113,7 @@ velero backup get                       # backups existentes e status
 velero schedule get                     # agendamentos diário e horário
 velero backup describe <nome> --details # o que foi capturado
 velero backup logs <nome>
-aws s3 ls s3://togglemaster-solidarytech-velero-backups/backups/ --region us-west-2
+aws s3 ls s3://solidarytech-velero-backups/backups/ --region us-west-2
 ```
 
 ### 5.2 Opção B — Warm Standby por Terraform modularizado

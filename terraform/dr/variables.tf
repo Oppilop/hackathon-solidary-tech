@@ -6,12 +6,12 @@ variable "aws_region" {
 
 variable "project" {
   type    = string
-  default = "togglemaster"
+  default = "solidarytech"
 }
 
 variable "cluster_name" {
   type    = string
-  default = "togglemaster-eks-dr"
+  default = "solidarytech-eks-dr"
 }
 
 variable "kubernetes_version" {

@@ -19,7 +19,7 @@
 
 | Item | Link |
 |---|---|
-| Repositório de código | `https://github.com/_SEU-USUARIO_/togglemaster-tc5` |
+| Repositório de código | `https://github.com/_SEU-USUARIO_/hackathon-solidary-tech` |
 | Vídeo de demonstração (≤ 20 min) | `https://_____` |
 | Código-fonte base dos microsserviços | https://github.com/dougls/hackathon-DCLT |
 

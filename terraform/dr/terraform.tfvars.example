@@ -1,9 +1,9 @@
 aws_region   = "us-west-2"
-project      = "togglemaster"
-cluster_name = "togglemaster-eks-dr"
+project      = "solidarytech"
+cluster_name = "solidarytech-eks-dr"
 
 # MESMO repositório GitOps do primário — é o que garante paridade de estado.
-gitops_repo_url = "https://github.com/SEU-USUARIO/togglemaster-tc5.git"
+gitops_repo_url = "https://github.com/SEU-USUARIO/hackathon-solidary-tech.git"
 gitops_revision = "HEAD"
 
 # Warm standby: 1 node. No failover, suba para 3.

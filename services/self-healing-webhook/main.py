@@ -119,7 +119,7 @@ def restart_deployment(namespace: str, deployment: str) -> tuple[bool, str]:
                 "metadata": {
                     "annotations": {
                         "kubectl.kubernetes.io/restartedAt": timestamp,
-                        "togglemaster.io/restarted-by": "self-healing-webhook",
+                        "solidarytech.org/restarted-by": "self-healing-webhook",
                     }
                 }
             }

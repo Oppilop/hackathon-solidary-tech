@@ -1,10 +1,10 @@
 aws_region   = "us-east-1"
 dr_region    = "us-west-2"
-project      = "togglemaster"
-cluster_name = "togglemaster-eks-prod"
+project      = "solidarytech"
+cluster_name = "solidarytech-eks-prod"
 
 # --- GitOps ---
-gitops_repo_url = "https://github.com/SEU-USUARIO/togglemaster-tc5.git"
+gitops_repo_url = "https://github.com/SEU-USUARIO/hackathon-solidary-tech.git"
 gitops_revision = "HEAD"
 
 # --- FinOps ---
@@ -19,7 +19,7 @@ enable_elasticache        = false
 # --- Disaster Recovery ---
 # Nome global: troque para algo único na sua conta e replique o mesmo valor em
 # gitops/base/observability/08-velero.yaml.
-velero_bucket_name       = "togglemaster-solidarytech-velero-backups"
+velero_bucket_name       = "solidarytech-velero-backups"
 db_backup_retention_days = 7
 
 # --- Credenciais (AWS Academy) ---

@@ -152,7 +152,7 @@ spec:
               esgota 2% do orçamento mensal em 1 hora.
               Taxa de erro (5m): {{ $value | humanizePercentage }} — limite do SLO: 0,1%.
               Ação imediata: verificar RDS, fila SQS e últimos deploys.
-            runbook_url: 'https://github.com/SEU-USUARIO/togglemaster-tc5/blob/main/docs/fase5/ITSM-AIOPS.md#runbook-donation-error-budget'
+            runbook_url: 'https://github.com/SEU-USUARIO/hackathon-solidary-tech/blob/main/docs/fase5/ITSM-AIOPS.md#runbook-donation-error-budget'
 
         - alert: DonationErrorBudgetSlowBurn
           expr: |
@@ -232,7 +232,7 @@ spec:
               O serviço {{ $labels.service }} está respondendo 5xx em mais de 5%
               das requisições nos últimos 5 minutos.
               Valor atual: {{ $value | humanizePercentage }}
-            runbook_url: 'https://github.com/SEU-USUARIO/togglemaster-tc5/blob/main/docs/fase5/ITSM-AIOPS.md#runbook-high-error-rate'
+            runbook_url: 'https://github.com/SEU-USUARIO/hackathon-solidary-tech/blob/main/docs/fase5/ITSM-AIOPS.md#runbook-high-error-rate'
 
     - name: solidarytech.availability
       interval: 30s

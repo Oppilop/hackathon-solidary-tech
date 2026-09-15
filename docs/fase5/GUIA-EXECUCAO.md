@@ -85,7 +85,7 @@ terraform apply
 ## Etapa 4 — Acessar o cluster
 
 ```bash
-aws eks update-kubeconfig --region us-east-1 --name togglemaster-eks-prod
+aws eks update-kubeconfig --region us-east-1 --name solidarytech-eks-prod
 
 # ArgoCD
 kubectl -n argocd get secret argocd-initial-admin-secret \
