@@ -81,7 +81,7 @@ spec:
         - name: webhook
           # ESTA LINHA É ATUALIZADA AUTOMATICAMENTE PELO CI (sed) igual aos
           # demais microsserviços.
-          image: 318738644849.dkr.ecr.us-east-1.amazonaws.com/solidarytech-self-healing-webhook:v1.0.0-f63c1a5
+          image: 318738644849.dkr.ecr.us-east-1.amazonaws.com/solidarytech-self-healing-webhook:v1.0.0-b5241a6
           imagePullPolicy: Always
           volumeMounts:
             - name: tmp
