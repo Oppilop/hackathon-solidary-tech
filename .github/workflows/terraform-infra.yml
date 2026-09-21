@@ -311,8 +311,20 @@ jobs:
         id: outputs
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          CLUSTER=$(terraform output -raw cluster_name)
+          # Sem o "|| true" o -e abortaria aqui e o erro real (output ausente)
+          # ficaria escondido atras de um exit code generico.
+          CLUSTER=$(terraform output -raw cluster_name 2>/dev/null || true)
+
+          if [ -z "$CLUSTER" ]; then
+            echo "::error::terraform output 'cluster_name' veio vazio."
+            echo "Causas usuais: o apply falhou parcialmente, ou o state nao"
+            echo "tem o modulo eks. Saida completa de 'terraform output':"
+            terraform output || echo "(nenhum output no state)"
+            exit 1
+          fi
+
           echo "cluster_name=$CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "cluster capturado: $CLUSTER"
           echo "─── Outputs principais ───"
           terraform output
 
@@ -343,9 +355,19 @@ jobs:
 
       - name: Update kubeconfig
         run: |
+          CLUSTER="${{ needs.terraform-apply.outputs.cluster_name }}"
+
+          if [ -z "$CLUSTER" ]; then
+            echo "::error::O job de apply nao exportou 'cluster_name'."
+            echo "Sem esse valor o aws eks update-kubeconfig recebe --name vazio"
+            echo "e falha com ParamValidation. Verifique o step 'Capturar outputs'."
+            exit 1
+          fi
+
+          echo "conectando ao cluster: $CLUSTER"
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
-            --name ${{ needs.terraform-apply.outputs.cluster_name }}
+            --name "$CLUSTER"
 
       - name: Esperar ArgoCD ficar pronto
         run: |
