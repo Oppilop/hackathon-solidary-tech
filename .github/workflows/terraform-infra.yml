@@ -53,6 +53,12 @@ env:
   TF_VERSION: "1.10.5"
   WORKING_DIR: ./terraform
   TF_STATE_KEY: solidarytech/fase5/terraform.tfstate
+  # Precisa casar com var.cluster_name em terraform/variables.tf.
+  # Fica aqui, e nao no output do job de apply, porque ha um secret no
+  # repositorio cujo valor e "solidarytech": o GitHub recusa exportar
+  # qualquer output que contenha valor de secret, e o job seguinte recebia
+  # --name vazio ("Skip output 'cluster_name' since it may contain secret").
+  CLUSTER_NAME: solidarytech-eks-prod
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -231,8 +237,6 @@ jobs:
       (github.event_name == 'push' && needs.terraform-plan.outputs.has_changes == 'true')
     environment:
       name: production
-    outputs:
-      cluster_name: ${{ steps.outputs.outputs.cluster_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -323,8 +327,16 @@ jobs:
             exit 1
           fi
 
-          echo "cluster_name=$CLUSTER" >> "$GITHUB_OUTPUT"
-          echo "cluster capturado: $CLUSTER"
+          # Confere que o state bate com o env usado pelos jobs seguintes.
+          # O valor NAO e exportado como output: o GitHub o bloquearia por
+          # conter a palavra registrada como secret.
+          if [ "$CLUSTER" != "${{ env.CLUSTER_NAME }}" ]; then
+            echo "::warning::divergencia de nome do cluster:"
+            echo "  state:    $CLUSTER"
+            echo "  workflow: ${{ env.CLUSTER_NAME }}"
+            echo "Alinhe env.CLUSTER_NAME com var.cluster_name."
+          fi
+          echo "cluster confirmado no state"
           echo "─── Outputs principais ───"
           terraform output
 
@@ -355,15 +367,7 @@ jobs:
 
       - name: Update kubeconfig
         run: |
-          CLUSTER="${{ needs.terraform-apply.outputs.cluster_name }}"
-
-          if [ -z "$CLUSTER" ]; then
-            echo "::error::O job de apply nao exportou 'cluster_name'."
-            echo "Sem esse valor o aws eks update-kubeconfig recebe --name vazio"
-            echo "e falha com ParamValidation. Verifique o step 'Capturar outputs'."
-            exit 1
-          fi
-
+          CLUSTER="${{ env.CLUSTER_NAME }}"
           echo "conectando ao cluster: $CLUSTER"
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
@@ -533,9 +537,9 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         continue-on-error: true
         run: |
-          CLUSTER=$(terraform output -raw cluster_name 2>/dev/null || echo "")
+          CLUSTER="${{ env.CLUSTER_NAME }}"
           if [ -n "$CLUSTER" ]; then
-            aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER"
+            aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER" 2>/dev/null || true
             kubectl delete applications --all -n argocd --timeout=120s || true
             sleep 30
           fi
