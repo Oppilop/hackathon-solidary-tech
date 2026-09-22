@@ -31,7 +31,7 @@ spec:
       containers:
         - name: ngo-service
           # Linha atualizada automaticamente pelo CI (bump da tag da imagem).
-          image: 318738644849.dkr.ecr.us-east-1.amazonaws.com/solidarytech-ngo:v1.0.0-b5241a6
+          image: 993826904628.dkr.ecr.us-east-1.amazonaws.com/solidarytech-ngo:v1.0.0-683c7ae
           imagePullPolicy: Always
           ports:
             - { containerPort: 8081, name: http }
