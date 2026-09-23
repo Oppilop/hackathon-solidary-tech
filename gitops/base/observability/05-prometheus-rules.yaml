@@ -143,6 +143,11 @@ spec:
             severity: critical
             auto_heal: "true" # aciona o self-healing-webhook
             service: donation-service
+            # namespace e obrigatorio para o webhook saber ONDE reiniciar:
+            # sem ele a acao e recusada com "alert_missing_labels". A recording
+            # rule que alimenta este alerta nao carrega o label, entao ele e
+            # declarado aqui — o alerta e especifico do donation-service.
+            namespace: donation-namespace
             slo: availability
             category: slo
           annotations:
@@ -208,14 +213,14 @@ spec:
         - alert: HighHttpErrorRate
           expr: |
             (
-              sum by (service) (
+              sum by (service, namespace) (
                 rate(http_requests_total{
                   http_response_status_code=~"5..",
                   service=~"ngo-service|donation-service|volunteer-service"
                 }[5m])
               )
               /
-              sum by (service) (
+              sum by (service, namespace) (
                 rate(http_requests_total{
                   service=~"ngo-service|donation-service|volunteer-service"
                 }[5m])
