@@ -15,7 +15,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Fase 5: instrumentação OpenTelemetry (traces + métricas + /metrics em :9464)
+# Fase 5: instrumentação OpenTelemetry (traces + métricas + /metrics em :9464).
 init_telemetry(flask_app=app, service_name="ngo-service")
 
 DATABASE_URL = os.getenv("DATABASE_URL")

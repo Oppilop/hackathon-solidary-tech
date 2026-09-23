@@ -17,7 +17,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Fase 5: instrumentação OpenTelemetry (inclui auto-instrumentação do botocore,
-# então cada chamada ao DynamoDB vira um span filho da requisição HTTP)
+# então cada chamada ao DynamoDB vira um span filho da requisição HTTP).
 init_telemetry(flask_app=app, service_name="volunteer-service")
 
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
