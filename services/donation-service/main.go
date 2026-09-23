@@ -61,8 +61,14 @@ func main() {
 		log.Fatal("DATABASE_URL é obrigatória")
 	}
 
+	// sql.Open nao conecta: apenas valida o DSN. Quem abre a conexao de fato e
+	// o Ping. Tratar os dois no mesmo if descartava o erro do Ping e o log saia
+	// como "<nil>", escondendo a causa real de um CrashLoop.
 	db, err := sql.Open("pgx", dbURL)
-	if err != nil || db.Ping() != nil {
+	if err != nil {
+		log.Fatalf("DATABASE_URL invalida: %v", err)
+	}
+	if err := db.Ping(); err != nil {
 		log.Fatalf("Erro ao conectar ao banco de dados: %v", err)
 	}
 	// Pool dimensionado para os limits do Pod (ver gitops/base/donation/deployment.yaml).
