@@ -129,7 +129,20 @@ spec:
               include:
                 - /var/log/pods/*/*/*.log
               exclude:
-                - /var/log/pods/observability_*/*/*.log
+                # Excluir o namespace observability inteiro criava um efeito
+                # colateral: o log do self-healing-webhook, que roda ali, nunca
+                # chegava ao Loki — e o painel de acao automatica de recuperacao
+                # ficava vazio mesmo apos o webhook agir.
+                #
+                # A exclusao existe para evitar retroalimentacao (o coletor
+                # coletando o proprio log, e o Loki logando que recebeu log do
+                # Loki). Basta excluir os componentes que causam o laco.
+                - /var/log/pods/observability_otel-*/*/*.log
+                - /var/log/pods/observability_loki-*/*/*.log
+                - /var/log/pods/observability_kps-*/*/*.log
+                - /var/log/pods/observability_prometheus-*/*/*.log
+                - /var/log/pods/observability_alertmanager-*/*/*.log
+                - /var/log/pods/observability_datadog-*/*/*.log
               start_at: end
               include_file_path: true
               include_file_name: false
