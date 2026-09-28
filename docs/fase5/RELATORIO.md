@@ -9,19 +9,15 @@
 
 | Nome completo | RM | Username (GitHub / Discord) |
 |---|---|---|
-| _preencher_ | _RM_____ | _@usuario_ |
-| _preencher_ | _RM_____ | _@usuario_ |
-| _preencher_ | _RM_____ | _@usuario_ |
-| _preencher_ | _RM_____ | _@usuario_ |
-| _preencher_ | _RM_____ | _@usuario_ |
+| Vitor Gramacho | RM369818 |
+| Nicole Polippo | RM369731 |
 
 ## 2. Links da entrega
 
 | Item | Link |
 |---|---|
-| Repositório de código | `https://github.com/_SEU-USUARIO_/hackathon-solidary-tech` |
-| Vídeo de demonstração (≤ 20 min) | `https://_____` |
-| Código-fonte base dos microsserviços | https://github.com/dougls/hackathon-DCLT |
+| Repositório de código | `https://github.com/Oppilop/hackathon-solidary-tech` |
+| Vídeo de demonstração (≤ 20 min) | `SolidaryTech.mp4` |
 
 ---
 
@@ -87,13 +83,14 @@ features**, disparado automaticamente pelo alerta
 
 ### 4.4 Dashboard SRE
 
-> **📷 Evidência 01** — `evidencias/01-dashboard-sre-slo.png`
 > Grafana, painel "SolidaryTech — SRE: SLO & Error Budget": disponibilidade
 > 7d, **gauge de error budget restante**, fator de queima com cortes em 6x e
 > 14,4x, e as Golden Metrics.
 
-> **📷 Evidência 02** — `evidencias/02-prometheus-regras-slo.png`
-> Prometheus → Alerts, com as regras de burn rate carregadas.
+> <img width="2536" height="1238" alt="image" src="https://github.com/user-attachments/assets/521d27d9-f89c-4884-8dac-db549750e737" />
+ <img width="2186" height="1080" alt="image" src="https://github.com/user-attachments/assets/f0e13c99-eb83-4972-8176-e56845b68b8b" />
+
+
 
 ### 4.5 MTTR
 
@@ -125,11 +122,8 @@ Aplicadas em **duas camadas**: `default_tags` no provider AWS (pega qualquer
 recurso, mesmo esquecido) e `merge()` explícito em cada módulo (torna a
 intenção auditável no `terraform plan`).
 
-> **📷 Evidência 03** — `evidencias/03-tags-tag-editor.png`
-> AWS Tag Editor filtrando `Project = SolidaryTech`.
+<img width="2186" height="988" alt="image" src="https://github.com/user-attachments/assets/55e6f087-369e-4ff9-a7e6-846184811e81" />
 
-> **📷 Evidência 04** — `evidencias/04-cost-explorer-costcenter.png`
-> Cost Explorer agrupado por tag `CostCenter`.
 
 ### 5.2 Rightsizing
 
@@ -141,9 +135,6 @@ intenção auditável no `terraform plan`).
 
 Node group reduzido de 4 para **3 × t3.medium** (−US$ 30,37/mês) e
 ElastiCache **não provisionado** por ausência de consumidor (−US$ 12,41/mês).
-
-> **📷 Evidência 05** — `evidencias/05-rightsizing-uso-vs-request.png`
-> Painel "FinOps — uso real vs. request declarado".
 
 ### 5.3 Forecast mensal
 
@@ -174,9 +165,6 @@ Complementares: Graviton `t4g.medium` (−US$ 17,52/mês), VPC Gateway Endpoints
 para S3/DynamoDB, GSI no DynamoDB para eliminar o `Scan`. Já implementadas:
 lifecycle no ECR e no bucket de backup, e ambiente de DR destruído em repouso.
 
-> **📷 Evidência 06** — `evidencias/06-aws-budgets.png`
-> AWS Budgets com os alertas de 80% (real), 100% (real) e 100% (**previsto**).
-
 Detalhamento em [FINOPS.md](FINOPS.md).
 
 ---
@@ -190,15 +178,15 @@ Ativado sobre `env:production`, com *Unified Service Tagging* (`DD_ENV`,
 Collector. Detecta desvio comportamental **sem limiar configurado** — pega o
 que nenhuma regra previu.
 
-> **📷 Evidência 07** — `evidencias/07-datadog-watchdog.png`
 > Watchdog → Insights com detecção automática.
+<img width="2024" height="940" alt="image" src="https://github.com/user-attachments/assets/655d2c02-77fc-4e5e-94fb-2d47274a7daf" />
 
-> **📷 Evidência 08** — `evidencias/08-datadog-service-map.png`
+
 > Service Map com os 3 serviços e dependências (RDS, SQS, DynamoDB).
-
-> **📷 Evidência 09** — `evidencias/09-datadog-trace-sqs.png`
 > Trace distribuído de `POST /donations`, com o span de publicação no SQS
 > (traceparent propagado nos `MessageAttributes`).
+> <img width="2164" height="1088" alt="image" src="https://github.com/user-attachments/assets/c599091a-6053-43f0-8a0b-bcd10666af2e" />
+
 
 ### 6.2 Ciclo de vida do incidente
 
@@ -216,10 +204,8 @@ que nenhuma regra previu.
 Matriz de severidade P1–P4, plano de comunicação por público e runbooks
 completos em [ITSM-AIOPS.md](ITSM-AIOPS.md).
 
-> **📷 Evidência 10** — `evidencias/10-pagerduty-incidente.png`
-> **📷 Evidência 11** — `evidencias/11-discord-notificacao.png`
-> **📷 Evidência 12** — `evidencias/12-self-healing-log.png`
-> Log JSON do webhook registrando o `rollout restart` automático.
+<img width="1600" height="499" alt="image" src="https://github.com/user-attachments/assets/5cc6c073-3aa8-4fe6-917a-456661426a1d" />
+
 
 ---
 
@@ -254,12 +240,15 @@ group, e apontando para o **mesmo repositório GitOps** — sem manifestos
 duplicados. Sobe com um comando (`terraform -chdir=terraform/dr apply`) ou pelo
 workflow **Terraform DR**. Em repouso fica destruído: **custo zero**.
 
-> **📷 Evidência 13** — `evidencias/13-velero-backups.png`
 > `velero schedule get` e `velero backup get`.
-> **📷 Evidência 14** — `evidencias/14-s3-backup-us-west-2.png`
+> <img width="2112" height="322" alt="image" src="https://github.com/user-attachments/assets/cb40cd22-6760-4aac-ace9-5759ee801e00" />
+
 > Objetos no bucket da região secundária.
-> **📷 Evidência 15** — `evidencias/15-terraform-dr-apply.png`
+<img width="1576" height="98" alt="image" src="https://github.com/user-attachments/assets/893a976d-cb20-43a9-8333-701ea79d2ae1" />
+
 > Workflow do Warm Standby com o `failover_checklist`.
+<img width="2146" height="680" alt="image" src="https://github.com/user-attachments/assets/ca784a12-3f58-48cb-ad14-25f4eb83b4ca" />
+
 
 ### 7.3 Segurança
 
@@ -273,19 +262,21 @@ self-healing com RBAC mínimo restrito por regex de namespace.
 conta própria): credenciais estáticas em Secret no lugar de IRSA, RDS
 single-AZ, Prometheus em `emptyDir`, ausência de WAF/TLS no ingress.
 
-> **📷 Evidência 16** — `evidencias/16-pipeline-devsecops.png`
 > Job de Security Scan com Trivy/gosec/bandit — e um run bloqueado por CRITICAL.
+<img width="2014" height="1202" alt="image" src="https://github.com/user-attachments/assets/fa51ac5d-1515-41d8-899c-b203f825d5b8" />
 
 ---
 
 ## 8. Evidências da fundação (Fases 1 a 4)
 
-> **📷 Evidência 17** — `evidencias/17-terraform-apply.png` — pipeline de IaC concluído
-> **📷 Evidência 18** — `evidencias/18-argocd-applications.png` — Applications `Synced/Healthy`
-> **📷 Evidência 19** — `evidencias/19-cicd-pipeline-verde.png` — esteira dos 4 jobs
-> **📷 Evidência 20** — `evidencias/20-dashboard-visao-geral.png` — painel de visão geral (Golden Metrics + FinOps)
-> **📷 Evidência 21** — `evidencias/21-loki-logs.png` — logs centralizados no Grafana
-> **📷 Evidência 22** — `evidencias/22-pods-namespaces.png` — `kubectl get pods -A`
+>  Pipeline de IaC concluído
+> <img width="1600" height="630" alt="image" src="https://github.com/user-attachments/assets/cceabd2f-3345-4058-a39f-69bde68468dc" />
+
+> Applications `Synced/Healthy`
+> <img width="1600" height="639" alt="image" src="https://github.com/user-attachments/assets/a0ba479d-9d15-4271-8aef-b5a43724390e" />
+
+> Esteira dos 4 jobs
+> <img width="1600" height="705" alt="image" src="https://github.com/user-attachments/assets/f7a927ed-e1f2-4d93-8f14-d35a75b06024" />
 
 ---
 
