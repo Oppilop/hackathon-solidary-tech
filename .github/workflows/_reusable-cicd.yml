@@ -8,7 +8,6 @@
 #   4. Docker build + scan da imagem (Trivy) + push no ECR
 #   5. Bump da tag da imagem no manifesto GitOps  -> ArgoCD sincroniza
 #
-# Nenhum `kubectl apply` de aplicação: quem entrega é o ArgoCD.
 # =============================================================================
 
 name: Reusable CI/CD
@@ -204,7 +203,6 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # 4) DOCKER BUILD + SCAN DA IMAGEM + PUSH NO ECR
-  #    Só em push na main — não publicamos imagem a cada PR.
   # ───────────────────────────────────────────────────────────────────────────
   docker:
     name: Docker Build + Scan + Push
@@ -262,7 +260,6 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # 5) GITOPS — atualiza a tag da imagem no manifesto.
-  #    É este commit que faz o ArgoCD sincronizar a nova versão.
   # ───────────────────────────────────────────────────────────────────────────
   update-gitops:
     name: Update GitOps Manifest
