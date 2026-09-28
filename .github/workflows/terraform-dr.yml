@@ -1,15 +1,5 @@
 # =============================================================================
 # Disaster Recovery — ambiente ESPELHO (Warm Standby) em us-west-2.
-#
-# É a evidência prática da Opção B do requisito 4: um único acionamento
-# levanta a infraestrutura completa na região secundária, reutilizando os
-# MESMOS módulos Terraform do primário (terraform/modules/).
-#
-# Enquanto não há desastre, o ambiente fica destruído (custo zero). O que
-# mantém o RPO é o backup contínuo (Velero -> S3 cross-region, snapshots do
-# RDS e PITR do DynamoDB).
-#
-# Estado do Terraform em key SEPARADA — um apply de DR nunca toca produção.
 # =============================================================================
 
 name: Terraform DR (Warm Standby)
