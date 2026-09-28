@@ -53,11 +53,6 @@ env:
   TF_VERSION: "1.10.5"
   WORKING_DIR: ./terraform
   TF_STATE_KEY: solidarytech/fase5/terraform.tfstate
-  # Precisa casar com var.cluster_name em terraform/variables.tf.
-  # Fica aqui, e nao no output do job de apply, porque ha um secret no
-  # repositorio cujo valor e "solidarytech": o GitHub recusa exportar
-  # qualquer output que contenha valor de secret, e o job seguinte recebia
-  # --name vazio ("Skip output 'cluster_name' since it may contain secret").
   CLUSTER_NAME: solidarytech-eks-prod
 
 jobs:
@@ -381,12 +376,7 @@ jobs:
             deployment/argocd-repo-server -n argocd
           echo "ArgoCD pronto."
 
-      # ─────────────────────────────────────────────────────────────────────
-      # Secrets que NÃO podem ir para o Git. Criados aqui, antes do ArgoCD
-      # sincronizar as Applications de observabilidade.
-      # NOTA: o GitHub Actions não permite `secrets.X` em `if:`, por isso o
-      # step "gate" abaixo publica flags em outputs.
-      # ─────────────────────────────────────────────────────────────────────
+
       - name: Verificar quais secrets de observabilidade existem
         id: obs-secrets
         env:
